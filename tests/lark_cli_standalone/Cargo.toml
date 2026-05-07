@@ -1,0 +1,10 @@
+[package]
+name = "lark-cli-minimal-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+# No additional dependencies - minimal test
