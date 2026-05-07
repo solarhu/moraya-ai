@@ -1,0 +1,5 @@
+# Cargo config for glib 2.72.3
+# This sets PKG_CONFIG_PATH automatically during build
+
+[env]
+PKG_CONFIG_PATH = "/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig"
