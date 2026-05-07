@@ -165,288 +165,534 @@ Rust解析CLI输出
 
 ## 三、飞书CLI集成设计
 
-### 3.1 飞书CLI命令封装（假设）
+### 3.1 飞书CLI命令封装（lark-cli实际命令）
 
 ```bash
-# 飞书CLI命令（需与飞书团队确认实际命令格式）
+# 飞书CLI命令（lark-cli - 飞书官方CLI工具）
+# CLI路径: /home/admin/.npm-global/bin/lark-cli
 
 # 1. 认证登录
-feishu auth login
-# 输出: Authentication successful. Token saved to ~/.feishu/config
+lark-cli auth login [--domain docs,drive]
+# 设备流认证，生成二维码或链接进行登录
+# 输出: 认证成功，token保存在本地
 
-# 2. 上传文档
-feishu upload <file_path> --folder <folder_token>
-# 输出: 
-# Document uploaded successfully.
-# Document ID: doc_abc123
-# URL: https://feishu.cn/docx/doc_abc123
+# 2. 飞书文档操作 (lark-cli docs)
+# 创建文档（从Markdown）
+lark-cli docs +create --title "标题" --markdown @file.md --folder-token "fld_xxx"
+# 输出: Document created: doc_xxx
 
-# 3. 下载文档
-feishu download <document_id> --output <output_path>
-# 输出:
-# Document downloaded successfully.
-# Saved to: /path/to/output.md
+# 获取文档（导出为Markdown/JSON）
+lark-cli docs +fetch --doc "doc_xxx" --format json
+# 输出: 文档内容JSON
 
-# 4. 列出文档
-feishu list --folder <folder_token>
-# 输出:
-# Document list:
-# - doc_abc123: "文档1.md" (updated: 2026-05-07)
-# - doc_def456: "文档2.md" (updated: 2026-05-06)
+# 更新文档
+lark-cli docs +update --doc "doc_xxx" --markdown @file.md --mode append
+# 支持模式: append, overwrite, replace_range, replace_all
+# 输出: Document updated: doc_xxx
 
-# 5. 删除文档
-feishu delete <document_id>
-# 输出: Document deleted successfully.
+# 搜索文档
+lark-cli docs +search --query "关键词"
+# 输出: 文档列表JSON
 
-# 6. 获取文档信息
-feishu info <document_id>
-# 输出:
-# Document ID: doc_abc123
-# Title: 文档1.md
-# Updated: 2026-05-07 10:00:00
-# Size: 1024 bytes
+# 3. Drive文件操作 (lark-cli drive)
+# 列出文件夹内容
+lark-cli drive +list --folder-token "fld_xxx"
+# 输出: 文件列表JSON
+
+# 上传文件
+lark-cli drive +upload --file @file.md --folder-token "fld_xxx"
+# 输出: File uploaded: file_xxx
+
+# 下载文件
+lark-cli drive +download --file "file_xxx" --output /path/to/save
+# 输出: File downloaded to: /path/to/save
+
+# 4. Drive Markdown操作 (lark-cli markdown)
+# 创建Markdown文件
+lark-cli markdown +create --file @file.md --folder-token "fld_xxx"
+# 输出: Markdown file created: file_xxx
+
+# 获取Markdown文件
+lark-cli markdown +fetch --file "file_xxx"
+# 输出: Markdown内容
+
+# 覆盖Markdown文件
+lark-cli markdown +overwrite --file "file_xxx" --markdown @file.md
+# 输出: Markdown file updated: file_xxx
+
+# 5. 知识库操作 (lark-cli wiki)
+# 列出知识库
+lark-cli wiki +list
+# 输出: 知识库列表JSON
+
+# 创建知识库节点
+lark-cli wiki +create-node --wiki "wiki_xxx" --title "节点标题"
+# 输出: Node created: node_xxx
 ```
 
 ### 3.2 Rust后端CLI调用实现
 
 ```rust
-// src-tauri/src/commands/feishu_cli.rs
+// src-tauri/src/commands/lark_cli.rs
 
 use std::process::Command;
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct FeishuUploadResult {
+struct LarkDocCreateResult {
     document_id: String,
-    document_url: String,
     success: bool,
     message: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct FeishuDownloadResult {
-    output_path: String,
+struct LarkDocFetchResult {
+    content: String,
+    format: String,
+    success: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LarkDocUpdateResult {
+    document_id: String,
     success: bool,
     message: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct FeishuDocInfo {
-    document_id: String,
+struct LarkFileInfo {
+    file_token: String,
     name: String,
+    r#type: String,
     updated_at: String,
 }
 
-/// 飞书CLI认证登录
+/// lark-cli 认证登录
 #[command]
-pub async fn feishu_cli_auth_login(
+pub async fn lark_cli_auth_login(
     cli_path: String,
+    domain: Option<String>,
 ) -> Result<String, String> {
+    let mut args = vec!["auth", "login"];
+    if let Some(d) = domain {
+        args.extend_from_slice(&["--domain", &d]);
+    }
+    
     let output = Command::new(&cli_path)
-        .args(&["auth", "login"])
+        .args(&args)
         .output()
-        .map_err(|e| format!("Failed to execute feishu CLI: {}", e))?;
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(stdout.to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Feishu auth failed: {}", stderr))
+        Err(format!("lark-cli auth failed: {}", stderr))
     }
 }
 
-/// 飞书CLI上传文档
+/// lark-cli 创建文档（从Markdown）
 #[command]
-pub async fn feishu_cli_upload(
+pub async fn lark_cli_docs_create(
     cli_path: String,
-    file_path: String,
+    title: String,
+    markdown_file: String,
     folder_token: String,
-) -> Result<FeishuUploadResult, String> {
+) -> Result<LarkDocCreateResult, String> {
     let output = Command::new(&cli_path)
-        .args(&["upload", &file_path, "--folder", &folder_token])
+        .args(&[
+            "docs",
+            "+create",
+            "--title", &title,
+            "--markdown", &format!("@{}", markdown_file),
+            "--folder-token", &folder_token,
+        ])
         .output()
-        .map_err(|e| format!("Failed to execute feishu CLI: {}", e))?;
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     
     if output.status.success() {
-        // 解析CLI输出
-        parse_upload_result(&stdout)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Feishu upload failed: {}", stderr))
-    }
-}
-
-/// 飞书CLI下载文档
-#[command]
-pub async fn feishu_cli_download(
-    cli_path: String,
-    document_id: String,
-    output_path: String,
-) -> Result<FeishuDownloadResult, String> {
-    let output = Command::new(&cli_path)
-        .args(&["download", &document_id, "--output", &output_path])
-        .output()
-        .map_err(|e| format!("Failed to execute feishu CLI: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    if output.status.success() {
-        Ok(FeishuDownloadResult {
-            output_path,
+        let document_id = parse_document_id(&stdout)?;
+        Ok(LarkDocCreateResult {
+            document_id,
             success: true,
             message: stdout.to_string(),
         })
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Feishu download failed: {}", stderr))
+        Err(format!("lark-cli docs create failed: {}", stderr))
     }
 }
 
-/// 飞书CLI列出文档
+/// lark-cli 获取文档
 #[command]
-pub async fn feishu_cli_list(
+pub async fn lark_cli_docs_fetch(
     cli_path: String,
-    folder_token: String,
-) -> Result<Vec<FeishuDocInfo>, String> {
+    doc_token: String,
+    format: String,
+) -> Result<LarkDocFetchResult, String> {
     let output = Command::new(&cli_path)
-        .args(&["list", "--folder", &folder_token])
+        .args(&[
+            "docs",
+            "+fetch",
+            "--doc", &doc_token,
+            "--format", &format,
+        ])
         .output()
-        .map_err(|e| format!("Failed to execute feishu CLI: {}", e))?;
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     
     if output.status.success() {
-        // 解析CLI输出的文档列表
-        parse_doc_list(&stdout)
+        Ok(LarkDocFetchResult {
+            content: stdout.to_string(),
+            format,
+            success: true,
+        })
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Feishu list failed: {}", stderr))
+        Err(format!("lark-cli docs fetch failed: {}", stderr))
     }
 }
 
-/// 飞书CLI删除文档
+/// lark-cli 更新文档
 #[command]
-pub async fn feishu_cli_delete(
+pub async fn lark_cli_docs_update(
     cli_path: String,
-    document_id: String,
+    doc_token: String,
+    markdown_file: String,
+    mode: String,
+) -> Result<LarkDocUpdateResult, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "docs",
+            "+update",
+            "--doc", &doc_token,
+            "--markdown", &format!("@{}", markdown_file),
+            "--mode", &mode,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    if output.status.success() {
+        Ok(LarkDocUpdateResult {
+            document_id: doc_token,
+            success: true,
+            message: stdout.to_string(),
+        })
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli docs update failed: {}", stderr))
+    }
+}
+
+/// lark-cli 搜索文档
+#[command]
+pub async fn lark_cli_docs_search(
+    cli_path: String,
+    query: String,
 ) -> Result<String, String> {
     let output = Command::new(&cli_path)
-        .args(&["delete", &document_id])
+        .args(&[
+            "docs",
+            "+search",
+            "--query", &query,
+        ])
         .output()
-        .map_err(|e| format!("Failed to execute feishu CLI: {}", e))?;
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(stdout.to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Feishu delete failed: {}", stderr))
+        Err(format!("lark-cli docs search failed: {}", stderr))
     }
 }
 
-// 辅助函数：解析CLI输出
-fn parse_upload_result(stdout: &str) -> Result<FeishuUploadResult, String> {
-    // 解析飞书CLI输出格式（需根据实际CLI输出格式调整）
-    // 假设输出格式：
-    // Document uploaded successfully.
-    // Document ID: doc_abc123
-    // URL: https://feishu.cn/docx/doc_abc123
+/// lark-cli 列出Drive文件
+#[command]
+pub async fn lark_cli_drive_list(
+    cli_path: String,
+    folder_token: String,
+) -> Result<Vec<LarkFileInfo>, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "drive",
+            "+list",
+            "--folder-token", &folder_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
     
-    let lines: Vec<&str> = stdout.lines().collect();
-    let mut document_id = String::new();
-    let mut document_url = String::new();
-    
-    for line in lines {
-        if line.starts_with("Document ID:") {
-            document_id = line.split(':').nth(1).unwrap_or("").trim().to_string();
-        }
-        if line.starts_with("URL:") {
-            document_url = line.split(':').nth(1).unwrap_or("").trim().to_string();
-        }
+    if output.status.success() {
+        parse_file_list(&stdout)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli drive list failed: {}", stderr))
     }
-    
-    if document_id.is_empty() {
-        return Err("Failed to parse document ID from CLI output".to_string());
-    }
-    
-    Ok(FeishuUploadResult {
-        document_id,
-        document_url,
-        success: true,
-        message: stdout.to_string(),
-    })
 }
 
-fn parse_doc_list(stdout: &str) -> Result<Vec<FeishuDocInfo>, String> {
-    // 解析飞书CLI输出的文档列表
-    // 假设输出格式：
-    // - doc_abc123: "文档1.md" (updated: 2026-05-07)
+/// lark-cli 上传文件到Drive
+#[command]
+pub async fn lark_cli_drive_upload(
+    cli_path: String,
+    file_path: String,
+    folder_token: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "drive",
+            "+upload",
+            "--file", &format!("@{}", file_path),
+            "--folder-token", &folder_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli drive upload failed: {}", stderr))
+    }
+}
+
+/// lark-cli 下载文件
+#[command]
+pub async fn lark_cli_drive_download(
+    cli_path: String,
+    file_token: String,
+    output_path: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "drive",
+            "+download",
+            "--file", &file_token,
+            "--output", &output_path,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli drive download failed: {}", stderr))
+    }
+}
+
+/// lark-cli 创建Markdown文件
+#[command]
+pub async fn lark_cli_markdown_create(
+    cli_path: String,
+    markdown_file: String,
+    folder_token: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "markdown",
+            "+create",
+            "--file", &format!("@{}", markdown_file),
+            "--folder-token", &folder_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli markdown create failed: {}", stderr))
+    }
+}
+
+/// lark-cli 获取Markdown文件
+#[command]
+pub async fn lark_cli_markdown_fetch(
+    cli_path: String,
+    file_token: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "markdown",
+            "+fetch",
+            "--file", &file_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli markdown fetch failed: {}", stderr))
+    }
+}
+
+/// lark-cli 覆盖Markdown文件
+#[command]
+pub async fn lark_cli_markdown_overwrite(
+    cli_path: String,
+    file_token: String,
+    markdown_file: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "markdown",
+            "+overwrite",
+            "--file", &file_token,
+            "--markdown", &format!("@{}", markdown_file),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli markdown overwrite failed: {}", stderr))
+    }
+}
+
+// 辅助函数：解析文档ID
+fn parse_document_id(stdout: &str) -> Result<String, String> {
+    // 解析lark-cli输出格式
+    // 可能格式: Document created: doc_xxx
+    // 或 JSON格式: {"document_id": "doc_xxx"}
     
-    let mut docs = Vec::new();
     for line in stdout.lines() {
-        if line.starts_with("- ") {
-            // 解析每一行
-            let parts: Vec<&str> = line.split(':').collect();
-            if parts.len() >= 2 {
-                let document_id = parts[0].trim().replace("- ", "");
-                let name = parts[1].trim().replace('"', "");
-                let updated_at = parts.get(2)
-                    .map(|s| s.trim().replace("(updated: ", "").replace(")", ""))
-                    .unwrap_or("");
-                
-                docs.push(FeishuDocInfo {
-                    document_id,
-                    name,
-                    updated_at,
-                });
+        if line.contains("doc_") || line.contains("Document created:") {
+            // 尝试提取doc_xxx格式的ID
+            let words: Vec<&str> = line.split_whitespace().collect();
+            for word in words {
+                if word.starts_with("doc_") {
+                    return Ok(word.trim_end_matches(',').to_string());
+                }
             }
         }
     }
     
-    Ok(docs)
+    // 尝试JSON解析
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(stdout) {
+        if let Some(doc_id) = json.get("document_id").and_then(|v| v.as_str()) {
+            return Ok(doc_id.to_string());
+        }
+    }
+    
+    Err("Failed to parse document ID from lark-cli output".to_string())
+}
+
+// 辅助函数：解析文件列表
+fn parse_file_list(stdout: &str) -> Result<Vec<LarkFileInfo>, String> {
+    // 尝试JSON解析
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(stdout) {
+        if let Some(files) = json.get("files").and_then(|v| v.as_array()) {
+            let mut result = Vec::new();
+            for file in files {
+                if let (Some(token), Some(name), Some(typ), Some(updated)) = (
+                    file.get("token").and_then(|v| v.as_str()),
+                    file.get("name").and_then(|v| v.as_str()),
+                    file.get("type").and_then(|v| v.as_str()),
+                    file.get("updated_at").and_then(|v| v.as_str()),
+                ) {
+                    result.push(LarkFileInfo {
+                        file_token: token.to_string(),
+                        name: name.to_string(),
+                        r#type: typ.to_string(),
+                        updated_at: updated.to_string(),
+                    });
+                }
+            }
+            return Ok(result);
+        }
+    }
+    
+    Err("Failed to parse file list from lark-cli output".to_string())
 }
 ```
 
 ### 3.3 前端CLI配置UI
 
 ```svelte
-<!-- src/lib/components/settings/FeishuCliConfig.svelte -->
+<!-- src/lib/components/settings/LarkCliConfig.svelte -->
 
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
 
-  let cliPath = $state('/usr/local/bin/feishu');  // 飞书CLI路径
+  let cliPath = $state('/home/admin/.npm-global/bin/lark-cli');  // lark-cli路径
   let folderToken = $state('');
+  let domain = $state('docs');  // docs 或 drive
   let authStatus = $state<'idle' | 'logging' | 'success' | 'error'>('idle');
 
   async function authLogin() {
     authStatus = 'logging';
     try {
-      const result = await invoke<string>('feishu_cli_auth_login', { cliPath });
+      const result = await invoke<string>('lark_cli_auth_login', {
+        cliPath,
+        domain
+      });
       authStatus = 'success';
     } catch (err) {
       authStatus = 'error';
+      console.error('Auth failed:', err);
     }
   }
 
-  async function testUpload() {
-    const result = await invoke('feishu_cli_upload', {
+  async function createDocument() {
+    const result = await invoke('lark_cli_docs_create', {
       cliPath,
-      filePath: '/tmp/test.md',
+      title: 'Test Document',
+      markdownFile: '/tmp/test.md',
       folderToken
     });
-    // ...
+    console.log('Document created:', result);
+  }
+
+  async function fetchDocument(docToken: string) {
+    const result = await invoke('lark_cli_docs_fetch', {
+      cliPath,
+      docToken,
+      format: 'json'
+    });
+    console.log('Document fetched:', result);
+  }
+
+  async function listFiles() {
+    const result = await invoke('lark_cli_drive_list', {
+      cliPath,
+      folderToken
+    });
+    console.log('Files listed:', result);
   }
 </script>
 
 <div class="cli-config">
   <div class="form-group">
-    <label>飞书CLI路径:</label>
-    <input type="text" bind:value={cliPath} placeholder="/usr/local/bin/feishu" />
+    <label>lark-cli路径:</label>
+    <input type="text" bind:value={cliPath} placeholder="/path/to/lark-cli" />
+  </div>
+
+  <div class="form-group">
+    <label>认证域:</label>
+    <select bind:value={domain}>
+      <option value="docs">docs</option>
+      <option value="drive">drive</option>
+      <option value="docs,drive">docs,drive</option>
+    </select>
   </div>
 
   <div class="form-group">
@@ -454,23 +700,72 @@ fn parse_doc_list(stdout: &str) -> Result<Vec<FeishuDocInfo>, String> {
     <input type="text" bind:value={folderToken} placeholder="fld_xxx" />
   </div>
 
-  <button onclick={authLogin}>
-    {authStatus === 'logging' ? '登录中...' : '飞书CLI认证'}
+  <button onclick={authLogin} disabled={authStatus === 'logging'}>
+    {authStatus === 'logging' ? '登录中...' : 'lark-cli认证'}
   </button>
 
   {#if authStatus === 'success'}
-    <div class="status success">✓ 飞书CLI认证成功</div>
+    <div class="status success">✓ lark-cli认证成功</div>
   {:else if authStatus === 'error'}
     <div class="status error">✗ 认证失败</div>
   {/if}
+
+  {#if authStatus === 'success'}
+    <div class="actions">
+      <button onclick={createDocument}>创建测试文档</button>
+      <button onclick={listFiles}>列出文件</button>
+    </div>
+  {/if}
 </div>
+
+<style>
+  .cli-config {
+    padding: 1rem;
+  }
+  
+  .form-group {
+    margin-bottom: 1rem;
+  }
+  
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  
+  .form-group input, .form-group select {
+    width: 100%;
+    padding: 0.5rem;
+  }
+  
+  .status {
+    padding: 0.5rem;
+    margin-top: 1rem;
+    border-radius: 4px;
+  }
+  
+  .status.success {
+    background-color: #d4edda;
+    color: #155724;
+  }
+  
+  .status.error {
+    background-color: #f8d7da;
+    color: #721c24;
+  }
+  
+  .actions {
+    margin-top: 1rem;
+    display: flex;
+    gap: 0.5rem;
+  }
+</style>
 ```
 
 ---
 
 ## 四、同步引擎设计
 
-### 4.1 SyncEngine（基于飞书CLI）
+### 4.1 SyncEngine（基于lark-cli）
 
 ```typescript
 // src/lib/services/sync-engine.ts
@@ -478,28 +773,30 @@ fn parse_doc_list(stdout: &str) -> Result<Vec<FeishuDocInfo>, String> {
 import { invoke } from '@tauri-apps/api/core';
 import { FileWatcher } from './file-watcher';
 
-export interface FeishuCliConfig {
-  cliPath: string;           // 飞书CLI路径
+export interface LarkCliConfig {
+  cliPath: string;           // lark-cli路径
   folderToken: string;       // 飞书文件夹Token
   kbPath: string;            // KB路径
+  syncMode: 'docs' | 'drive' | 'markdown';  // 同步模式
 }
 
 export class SyncEngine {
-  private config: FeishuCliConfig;
+  private config: LarkCliConfig;
   private fileWatcher: FileWatcher;
   private syncQueue: FileChange[] = [];
   private autoSync: boolean = false;
 
-  constructor(config: FeishuCliConfig) {
+  constructor(config: LarkCliConfig) {
     this.config = config;
     this.fileWatcher = new FileWatcher();
   }
 
   // 初始化同步
   async initialize(): Promise<void> {
-    // 验证飞书CLI路径
-    const authResult = await invoke<string>('feishu_cli_auth_login', {
-      cliPath: this.config.cliPath
+    // 验证lark-cli认证
+    const authResult = await invoke<string>('lark_cli_auth_login', {
+      cliPath: this.config.cliPath,
+      domain: this.config.syncMode
     });
 
     // 启动文件监听
@@ -514,38 +811,103 @@ export class SyncEngine {
     });
   }
 
-  // 上传文档（调用飞书CLI）
-  async uploadDocument(filePath: string): Promise<string> {
+  // 创建飞书文档（使用lark-cli docs）
+  async createDocument(markdownFile: string, title: string): Promise<string> {
     const result = await invoke<{
       document_id: string;
-      document_url: string;
       success: boolean;
-    }>('feishu_cli_upload', {
+    }>('lark_cli_docs_create', {
       cliPath: this.config.cliPath,
-      filePath,
+      title,
+      markdownFile,
       folderToken: this.config.folderToken
     });
 
     return result.document_id;
   }
 
-  // 下载文档（调用飞书CLI）
-  async downloadDocument(documentId: string, outputPath: string): Promise<void> {
-    await invoke('feishu_cli_download', {
+  // 获取飞书文档（使用lark-cli docs）
+  async fetchDocument(docToken: string, format: string = 'json'): Promise<string> {
+    const result = await invoke<{
+      content: string;
+      success: boolean;
+    }>('lark_cli_docs_fetch', {
       cliPath: this.config.cliPath,
-      documentId,
+      docToken,
+      format
+    });
+
+    return result.content;
+  }
+
+  // 更新飞书文档（使用lark-cli docs）
+  async updateDocument(docToken: string, markdownFile: string, mode: string = 'overwrite'): Promise<void> {
+    await invoke('lark_cli_docs_update', {
+      cliPath: this.config.cliPath,
+      docToken,
+      markdownFile,
+      mode
+    });
+  }
+
+  // 上传文件到Drive（使用lark-cli drive）
+  async uploadFile(filePath: string): Promise<string> {
+    const result = await invoke<string>('lark_cli_drive_upload', {
+      cliPath: this.config.cliPath,
+      filePath,
+      folderToken: this.config.folderToken
+    });
+
+    return result;
+  }
+
+  // 下载文件（使用lark-cli drive）
+  async downloadFile(fileToken: string, outputPath: string): Promise<void> {
+    await invoke('lark_cli_drive_download', {
+      cliPath: this.config.cliPath,
+      fileToken,
       outputPath
     });
   }
 
-  // 列出文档（调用飞书CLI）
-  async listDocuments(): Promise<DocInfo[]> {
-    const result = await invoke<DocInfo[]>('feishu_cli_list', {
+  // 列出Drive文件（使用lark-cli drive）
+  async listFiles(): Promise<FileInfo[]> {
+    const result = await invoke<FileInfo[]>('lark_cli_drive_list', {
       cliPath: this.config.cliPath,
       folderToken: this.config.folderToken
     });
 
     return result;
+  }
+
+  // 创建Markdown文件（使用lark-cli markdown）
+  async createMarkdownFile(markdownFile: string): Promise<string> {
+    const result = await invoke<string>('lark_cli_markdown_create', {
+      cliPath: this.config.cliPath,
+      markdownFile,
+      folderToken: this.config.folderToken
+    });
+
+    return result;
+  }
+
+  // 获取Markdown文件（使用lark-cli markdown）
+  async fetchMarkdownFile(fileToken: string): Promise<string> {
+    const result = await invoke<string>('lark_cli_markdown_fetch', {
+      cliPath: this.config.cliPath,
+      fileToken
+    });
+
+    return result;
+  }
+
+  // 覆盖Markdown文件（使用lark-cli markdown）
+  async overwriteMarkdownFile(fileToken: string, markdownFile: string): Promise<void> {
+    await invoke('lark_cli_markdown_overwrite', {
+      cliPath: this.config.cliPath,
+      fileToken,
+      markdownFile
+    });
   }
 
   // 首次同步上传（KB → 飞书）
@@ -555,38 +917,79 @@ export class SyncEngine {
       kbPath: this.config.kbPath
     });
 
-    // 批量上传（调用飞书CLI）
-    for (const file of files) {
-      await this.uploadDocument(file.path);
+    // 根据syncMode选择同步方式
+    if (this.config.syncMode === 'docs') {
+      // 使用docs命令同步（Markdown → 飞书文档）
+      for (const file of files) {
+        await this.createDocument(file.path, file.name);
+      }
+    } else if (this.config.syncMode === 'markdown') {
+      // 使用markdown命令同步（Markdown → Drive Markdown文件）
+      for (const file of files) {
+        await this.createMarkdownFile(file.path);
+      }
+    } else {
+      // 使用drive命令同步（文件上传）
+      for (const file of files) {
+        await this.uploadFile(file.path);
+      }
     }
   }
 
   // 首次同步下载（飞书 → KB）
   async firstSyncDownload(): Promise<void> {
-    // 获取飞书文档列表（调用飞书CLI）
-    const docs = await this.listDocuments();
+    // 获取飞书文件列表
+    const files = await this.listFiles();
 
-    // 批量下载（调用飞书CLI）
-    for (const doc of docs) {
-      await this.downloadDocument(
-        doc.document_id,
-        `${this.config.kbPath}/${doc.name}`
-      );
+    // 根据syncMode选择下载方式
+    if (this.config.syncMode === 'markdown') {
+      // 使用markdown fetch下载
+      for (const file of files) {
+        const content = await this.fetchMarkdownFile(file.file_token);
+        await invoke('kb_write_file', {
+          kbPath: this.config.kbPath,
+          fileName: file.name,
+          content
+        });
+      }
+    } else {
+      // 使用drive download下载
+      for (const file of files) {
+        await this.downloadFile(
+          file.file_token,
+          `${this.config.kbPath}/${file.name}`
+        );
+      }
     }
   }
 
   // 同步单个变更
   private async syncChange(change: FileChange): Promise<void> {
     if (change.type === 'create' || change.type === 'update') {
-      await this.uploadDocument(change.path);
+      // 根据syncMode选择同步方式
+      if (this.config.syncMode === 'docs') {
+        const docId = await this.findDocumentId(change.path);
+        if (docId) {
+          await this.updateDocument(docId, change.path, 'overwrite');
+        } else {
+          await this.createDocument(change.path, change.name);
+        }
+      } else if (this.config.syncMode === 'markdown') {
+        const fileToken = await this.findFileToken(change.path);
+        if (fileToken) {
+          await this.overwriteMarkdownFile(fileToken, change.path);
+        } else {
+          await this.createMarkdownFile(change.path);
+        }
+      } else {
+        await this.uploadFile(change.path);
+      }
     } else if (change.type === 'delete') {
-      // 需要映射本地文件 → 飞书文档ID
-      const docId = await this.findDocumentId(change.path);
-      if (docId) {
-        await invoke('feishu_cli_delete', {
-          cliPath: this.config.cliPath,
-          documentId: docId
-        });
+      // 需要映射本地文件 → 飞书文件Token
+      const fileToken = await this.findFileToken(change.path);
+      if (fileToken) {
+        // 删除飞书文件（需实现lark_cli_delete命令）
+        // await invoke('lark_cli_delete', { cliPath, fileToken });
       }
     }
   }
@@ -610,6 +1013,31 @@ export class SyncEngine {
     // ...
     return null;
   }
+
+  // 映射本地文件 → 飞书文件Token（需要维护映射表）
+  private async findFileToken(localPath: string): Promise<string | null> {
+    // 从本地Manifest或sidecar文件中查找映射
+    // ...
+    return null;
+  }
+}
+
+interface FileInfo {
+  file_token: string;
+  name: string;
+  type: string;
+  updated_at: string;
+}
+
+interface KBFileInfo {
+  path: string;
+  name: string;
+}
+
+interface FileChange {
+  type: 'create' | 'update' | 'delete';
+  path: string;
+  name: string;
 }
 ```
 
