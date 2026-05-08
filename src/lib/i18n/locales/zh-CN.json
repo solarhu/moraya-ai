@@ -2039,5 +2039,48 @@
     "error": {
       "targetMissing": "找不到 Picora 账号，请重新绑定此知识库，或在设置中恢复账号。"
     }
+  },
+  "larkSync": {
+    "bindDialog": {
+      "title": "绑定飞书同步 — {name}",
+      "step": "步骤 {current} / {total}",
+      "step1Title": "配置 lark-cli",
+      "step2Title": "扫描文件",
+      "step3Title": "选择同步策略",
+      "step4Title": "执行同步",
+      "installHint": "请先安装并登录 lark-cli 工具。参考：https://github.com/bytedance/lark-cli",
+      "cliPath": "lark-cli 路径",
+      "folderToken": "飞书文件夹 Token",
+      "syncMode": "同步模式",
+      "modeDocs": "文档模式",
+      "modeMarkdown": "Markdown 模式（推荐）",
+      "modeDrive": "Drive 模式",
+      "testAuth": "测试认证",
+      "authenticating": "认证中...",
+      "authSuccess": "认证成功！",
+      "scanning": "正在扫描...",
+      "localFiles": "本地文件",
+      "remoteFiles": "飞书云端文件",
+      "uploadToLark": "上传到飞书（本地覆盖云端）",
+      "uploadDesc": "将本地文件上传到飞书，适合首次绑定",
+      "downloadFromLark": "从飞书下载（云端覆盖本地）",
+      "downloadDesc": "将飞书文件下载到本地，适合恢复备份",
+      "noFirstSync": "仅绑定，稍后手动同步",
+      "noFirstSyncDesc": "先完成绑定，之后在 KB 管理器手动触发同步",
+      "autoSync": "启用自动同步",
+      "syncInterval": "同步间隔（秒）",
+      "confirmLabel": "我了解同步方向，确认执行",
+      "binding": "绑定中...",
+      "startSync": "开始同步",
+      "syncing": "正在同步...",
+      "syncSuccess": "同步完成！",
+      "syncedFiles": "已同步文件",
+      "failedFiles": "失败文件",
+      "duration": "耗时",
+      "back": "← 上一步",
+      "next": "下一步 →",
+      "done": "完成 ✓",
+      "retry": "重试"
+    }
   }
 }

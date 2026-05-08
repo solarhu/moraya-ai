@@ -6,6 +6,7 @@
   import { checkGitInstalled, deleteGitToken } from '$lib/services/git';
   import GitBindDialog from './GitBindDialog.svelte';
   import KbPicoraBindDialog from './KbPicoraBindDialog.svelte';
+  import KbLarkBindDialog from './KbLarkBindDialog.svelte';
   import { kbSyncStore } from '$lib/services/kb-sync/sync-service';
   import type { KbSyncState } from '$lib/services/kb-sync/types';
 
@@ -18,6 +19,7 @@
   let gitAvailable = $state<boolean | null>(null);
   let bindingKb = $state<KnowledgeBase | null>(null);
   let picoraBindingKb = $state<KnowledgeBase | null>(null);
+  let larkBindingKb = $state<KnowledgeBase | null>(null);
   let syncStates = $state<Map<string, KbSyncState>>(new Map());
 
   const unsubSync = kbSyncStore.subscribe(map => { syncStates = map; });
@@ -174,6 +176,13 @@
                 >
                   <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-1px;display:inline-block" aria-hidden="true"><path fill-rule="evenodd" d="M8 8m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0zM8 8m-4.5 0a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0zM8 8m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0z"/></svg>{#if kb.picoraBinding}{@const _s = syncStates.get(kb.id)}{#if _s?.status === 'conflict'} ⚠{_s.conflictCount}{:else if _s?.status === 'error'} ✗{:else if _s?.status === 'syncing'} ⟳{:else} {kb.picoraBinding.picoraKbName.slice(0, 12)}{/if}{/if}
                 </button>
+                <button
+                  class="kb-action-btn kb-lark-btn"
+                  onclick={() => { larkBindingKb = kb; }}
+                  title="飞书同步"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;display:inline-block"><path d="M8.5 4C8.5 6.5 10.5 8.5 13 8.5H15.5V11H13C9.5 11 7 13.5 7 17V20H4V17C4 11.5 8.5 7 13 7V4H8.5ZM8.5 20H15.5V17H8.5V20ZM8.5 17C8.5 15 10 13.5 12 13.5H15.5V16H12C11 16 10.5 15.5 10.5 14.5V17H8.5Z"/></svg>
+                </button>
                 {#if kb.git}
                   <button class="kb-action-btn" onclick={() => unbindGit(kb)} title={$t('git.unbind')}>
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4.28 3.22a.75.75 0 00-1.06 1.06L6.94 8l-3.72 3.72a.75.75 0 101.06 1.06L8 9.06l3.72 3.72a.75.75 0 101.06-1.06L9.06 8l3.72-3.72a.75.75 0 00-1.06-1.06L8 6.94 4.28 3.22z"/></svg>
@@ -214,6 +223,10 @@
     onClose={() => { picoraBindingKb = null; }}
     onBound={() => { picoraBindingKb = null; }}
   />
+{/if}
+
+{#if larkBindingKb}
+  <KbLarkBindDialog kb={larkBindingKb} onClose={() => { larkBindingKb = null; }} />
 {/if}
 
 <style>
@@ -423,4 +436,22 @@
   .kb-picora-btn.picora-warn { color: var(--warning-color, #e8a838); border-color: var(--warning-color, #e8a838) !important; }
   .kb-picora-btn.picora-err { color: var(--color-error, #e53e3e); border-color: var(--color-error, #e53e3e) !important; }
   .kb-picora-btn.picora-sync { color: var(--accent-color); border-color: var(--accent-color) !important; }
+
+  .kb-lark-btn {
+    font-size: var(--font-size-xs);
+    padding: 0 0.4rem;
+    border-radius: 3px;
+    border: 1px solid var(--border-color) !important;
+    white-space: nowrap;
+    overflow: hidden;
+    width: auto;
+    min-width: 1.5rem;
+    max-width: 140px;
+    color: var(--text-muted);
+  }
+
+  .kb-lark-btn:hover {
+    background: var(--bg-hover);
+    color: var(--accent-color);
+  }
 </style>

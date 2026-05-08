@@ -2039,5 +2039,48 @@
     "error": {
       "targetMissing": "Picora account not found — please re-bind this KB or restore the account in Settings."
     }
+  },
+  "larkSync": {
+    "bindDialog": {
+      "title": "Bind Lark Sync — {name}",
+      "step": "Step {current} / {total}",
+      "step1Title": "Configure lark-cli",
+      "step2Title": "Scan files",
+      "step3Title": "Choose sync strategy",
+      "step4Title": "Execute sync",
+      "installHint": "Install and login to lark-cli first. See: https://github.com/bytedance/lark-cli",
+      "cliPath": "lark-cli path",
+      "folderToken": "Lark folder token",
+      "syncMode": "Sync mode",
+      "modeDocs": "Docs mode",
+      "modeMarkdown": "Markdown mode (recommended)",
+      "modeDrive": "Drive mode",
+      "testAuth": "Test authentication",
+      "authenticating": "Authenticating...",
+      "authSuccess": "Authentication successful!",
+      "scanning": "Scanning...",
+      "localFiles": "Local files",
+      "remoteFiles": "Lark cloud files",
+      "uploadToLark": "Upload to Lark (local overwrites cloud)",
+      "uploadDesc": "Upload local files to Lark, suitable for first binding",
+      "downloadFromLark": "Download from Lark (cloud overwrites local)",
+      "downloadDesc": "Download Lark files to local, suitable for restoring backup",
+      "noFirstSync": "Bind only, sync manually later",
+      "noFirstSyncDesc": "Complete binding first, then trigger sync in KB manager",
+      "autoSync": "Enable auto sync",
+      "syncInterval": "Sync interval (seconds)",
+      "confirmLabel": "I understand the sync direction and confirm",
+      "binding": "Binding...",
+      "startSync": "Start sync",
+      "syncing": "Syncing...",
+      "syncSuccess": "Sync completed!",
+      "syncedFiles": "Synced files",
+      "failedFiles": "Failed files",
+      "duration": "Duration",
+      "back": "← Back",
+      "next": "Next →",
+      "done": "Done ✓",
+      "retry": "Retry"
+    }
   }
 }
