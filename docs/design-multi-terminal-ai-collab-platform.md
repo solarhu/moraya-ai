@@ -1,9 +1,9 @@
-# Moraya 多终端 AI 协同 Markdown 平台 - 方案设计文档
+# Moraya 多终端 AI 协同 Markdown 平台 - 方案设计文档（v4：飞书CLI直接集成）
 
-**版本**: v1.0  
+**版本**: v4.0  
 **日期**: 2026-05-07  
 **项目代号**: Moraya-X  
-**目标**: 构建基于Markdown的多终端、AI协同、云同步一体化创作平台
+**目标**: 通过飞书CLI工具实现飞书云文档同步 + 本地Markdown编辑
 
 ---
 
@@ -13,1055 +13,1106 @@
 
 Moraya作为开源Markdown AI Agent编辑器，已具备：
 - **本地优先架构**: Tauri v2桌面端 + 本地KB管理
-- **AI集成**: 多LLM提供商 + MCP工具生态 + AI模板系统
-- **同步基础**: KB ↔ GitHub/Picora云同步 + 三向Diff算法
-- **协同萌芽**: Review评论系统 + Git版本管理
+- **AI集成**: 多LLM提供商 + MCP工具生态
+- **编辑能力**: ProseMirror编辑器 + Markdown增强
 
-当前痛点：
-- **终端局限**: 仅支持桌面端，缺少Web/Mobile/鸿蒙覆盖
-- **云平台单一**: 仅支持GitHub/Picora，无法接入飞书等主流云文档
-- **AI被动**: AI作为对话工具，缺少深度协同创作能力
-- **多用户缺失**: 缺少实时协同编辑、团队协作功能
+**关键信息**: 飞书发布官方CLI工具
+- 飞书CLI可直接操作飞书云文档
+- 飞书CLI已实现飞书OAuth认证
+- 飞书CLI已实现Markdown ↔ 飞书Block转换
+- 飞书CLI支持upload/download/list等命令
 
-### 1.2 项目目标
+**架构简化**:
+- 不需要封装飞书API
+- 不需要实现飞书OAuth
+- 不需要实现Markdown ↔ 飞书Block转换
+- 不需要AI Agent中间层
+- 直接调用飞书CLI命令即可
 
-**核心目标**：构建"Markdown as Single Source of Truth"的多终端AI协同创作平台
+### 1.2 项目目标（v4：最简化方案）
 
-具体目标：
-1. **多终端全覆盖**: Desktop/Web/Mobile/HarmonyOS Next四端一致体验
-2. **云平台可扩展**: 首个支持飞书，架构支持Notion/语雀等任意平台扩展
-3. **AI深度协同**: Agent作为co-author/reviewer等角色深度参与创作
-4. **实时协作**: 多用户CRDT协同编辑 + AI实时建议
-5. **数据主权**: 本地优先架构，用户完全掌控数据
+**核心目标**: 通过飞书CLI工具实现飞书云文档同步 + 本地Markdown编辑
 
-### 1.3 目标用户
+具体目标:
+1. **飞书CLI集成**: Rust后端调用飞书CLI命令
+2. **本地文件监听**: 文件变更检测 + 变更队列
+3. **同步流程**: 首次同步 + 增量同步（CLI命令）
+4. **同步状态**: 同步进度反馈 + 状态指示器
+5. **Desktop优先**: 后续扩展Web/Mobile
 
-| 用户群体 | 核心诉求 | 使用场景 |
-|---------|---------|---------|
-| **个人创作者** | Markdown写作 + AI辅助 + 云同步 | 博客、文档、笔记 |
-| **团队协作** | 多人协同编辑 + 评论评审 + 版本管理 | 技术文档、产品文档 |
-| **企业用户** | 飞书集成 + 权限管理 + 审计合规 | 企业知识库、内部文档 |
-| **开发者** | Git集成 + 技术写作 + MCP工具调用 | README、API文档、技术博客 |
-| **AI Agent用户** | Agent深度协同 + 多Agent协作 | AI辅助创作、自动化文档生成 |
+**架构特点**:
+- 飞书CLI是官方工具，稳定可靠
+- 直接调用CLI命令，无需中间层
+- 架构最简化，开发量最小
+- 维护成本低（飞书官方维护CLI）
 
 ---
 
-## 二、整体架构设计
+## 二、整体架构设计（v4）
 
-### 2.1 架构分层
+### 2.1 架构分层（最简化）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Layer 1: Multi-Terminal Presentation (多终端展示层)                 │
+│ Layer 1: Desktop端 (Tauri v2)                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ Desktop      │  │ Web (PWA)    │  │ Mobile       │              │
-│  │ (Tauri v2)   │  │ (SvelteKit)  │  │ (Tauri)      │              │
-│  │ macOS/Win/Lin│  │ Chrome/Safari│  │ iOS/Android  │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│  ┌──────────────┐                                                  │
-│  │ HarmonyOS    │  (可选，Phase 9)                                 │
-│  │ Next (ArkTS) │                                                  │
-│  └──────────────┘                                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│ Layer 2: Moraya Core (@moraya/core)                                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ ProseMirror  │  │ Markdown-it  │  │ Sync Engine  │              │
-│  │ Editor       │  │ Parser       │  │ (Diff/CRDT)  │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ AI Service   │  │ MCP Manager  │  │ KB Service   │              │
-│  │ (Multi-LLM)  │  │ (Tool Call)  │  │ (Knowledge)  │              │
+│  │ ProseMirror  │  │ File Watcher │  │ Sync Manager │              │
+│  │ Editor       │  │ (文件监听)   │  │ (同步管理)   │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 ├─────────────────────────────────────────────────────────────────────┤
-│ Layer 3: Cloud Sync Adapter Registry (云同步适配器层)               │
+│ Layer 2: 本地KB管理                                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │ Local FS     │  │ Local        │  │ Sync Queue   │              │
+│  │ (KB文件)     │  │ Manifest     │  │ (变更队列)   │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+├─────────────────────────────────────────────────────────────────────┤
+│ Layer 3: 飞书CLI集成层                                             │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │              Sync Adapter Registry (可扩展架构)                │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐      │  │
-│  │  │ Feishu   │  │ Picora   │  │ GitHub   │  │ Notion   │      │  │
-│  │  │ Adapter  │  │ Adapter  │  │ Adapter  │  │ Adapter  │      │  │
-│  │  │ (首个)   │  │ (改造)   │  │ (改造)   │  │ (扩展)   │      │  │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘      │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐                    │  │
-│  │  │ Yuque    │  │ GitLab   │  │ Custom   │                    │  │
-│  │  │ Adapter  │  │ Adapter  │  │ API      │                    │  │
-│  │  └──────────┘  └──────────┘  └──────────┘                    │  │
+│  │              Feishu CLI Command调用                           │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │  │
+│  │  │ feishu upload│  │feishu download│  │ feishu list  │        │  │
+│  │  │ (上传文档)   │  │ (下载文档)   │  │ (文档列表)   │        │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘        │  │
+│  │  ┌──────────────┐  ┌──────────────┐                         │  │
+│  │  │ feishu auth  │  │ feishu delete│                         │  │
+│  │  │ (认证登录)   │  │ (删除文档)   │                         │  │
+│  │  └──────────────┘  └──────────────┘                         │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────────────┤
-│ Layer 4: AI Agent Adapter Registry (AI Agent适配器层)               │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │              AI Agent Registry (可扩展架构)                    │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐      │  │
-│  │  │ OpenClaw │  │ Claude   │  │ ChatGPT  │  │ Gemini   │      │  │
-│  │  │ Agent    │  │ Agent    │  │ Agent    │  │ Agent    │      │  │
-│  │  │ (首个)   │  │ (改造)   │  │ (改造)   │  │ (改造)   │      │  │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘      │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐                    │  │
-│  │  │ DeepSeek │  │ Qwen     │  │ Custom   │                    │  │
-│  │  │ Agent    │  │ Agent    │  │ Agent    │                    │  │
-│  │  └──────────┘  └──────────┘  └──────────┘                    │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────────┤
-│ Layer 5: Agent Collaboration Engine (Agent协同引擎)                 │
+│ Layer 4: Rust Backend (Tauri Commands)                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ Context      │  │ Block-level  │  │ Memory      │              │
-│  │ Injection    │  │ Operations   │  │ Management  │              │
-│  │ (KB→Agent)   │  │ (锚点定位)   │  │ (长期记忆)  │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ Tool Call    │  │ Multi-Agent  │  │ Audit       │              │
-│  │ (MCP集成)    │  │ Collab       │  │ Tracking    │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-├─────────────────────────────────────────────────────────────────────┤
-│ Layer 6: Real-time Collaboration (实时协同层)                       │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ CRDT Engine  │  │ WebSocket    │  │ Awareness   │              │
-│  │ (Yjs)        │  │ Sync         │  │ (在线状态)  │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-├─────────────────────────────────────────────────────────────────────┤
-│ Layer 7: Rust Backend (Tauri Commands)                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ File I/O     │  │ AI Proxy     │  │ MCP Proc     │              │
-│  │ Commands     │  │ HTTP/SSE     │  │ Manager      │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ Keychain     │  │ Object       │  │ Feishu       │              │
-│  │ (keyring)    │  │ Storage      │  │ API Proxy    │              │
+│  │ File I/O     │  │ Feishu CLI   │  │ Process      │              │
+│  │ Commands     │  │ Executor     │  │ Spawn        │              │
+│  │              │  │              │  │              │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 │  ┌──────────────┐  ┌──────────────┐                                │
-│  │ OpenClaw     │  │ WebSocket    │                                │
-│  │ API Proxy    │  │ Server       │                                │
+│  │ Keychain     │  │ Sync State   │                                │
+│  │ (CLI路径)    │  │ Storage      │                                │
 │  └──────────────┘  └──────────────┘                                │
 ├─────────────────────────────────────────────────────────────────────┤
-│ Layer 8: Storage & Security (存储与安全层)                          │
+│ Layer 5: 飞书CLI工具 (官方工具)                                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ Local FS     │  │ IndexedDB    │  │ SQLite      │              │
-│  │ (Desktop)    │  │ (Web/Mobile) │  │ (HarmonyOS)  │              │
+│  │ 飞书OAuth    │  │ Markdown ↔   │  │ 飞书API      │              │
+│  │ 认证        │  │ Block转换    │  │ 调用封装     │              │
+│  │ (已实现)     │  │ (已实现)     │  │ (已实现)     │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
+└─────────────────────────────────────────────────────────────────────┘
+                          ↓ 飞书API
+┌─────────────────────────────────────────────────────────────────────┤
+│ 飞书云文档 (云端存储)                                                │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ OS Keychain  │  │ TLS/E2E      │  │ Audit Log   │              │
-│  │ (密钥存储)   │  │ Encrypt      │  │ (审计)      │              │
+│  │ 文档内容     │  │ 版本历史     │  │ 实时协同     │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 核心设计理念
 
-#### 2.2.1 Markdown as Single Source of Truth
+#### 2.2.1 飞书CLI直接集成
 
-**理念**: Markdown作为唯一数据源，所有操作基于Markdown，所有平台转换Markdown
-
-**实现**:
-- 本地KB: Markdown文件 + sidecar JSON (AI操作/评论)
-- 云平台: Markdown ↔ Block转换器（飞书、Notion等）
-- Agent操作: Markdown Block标记 (:::ai-operation)
-- 协同编辑: Yjs绑定ProseMirror，操作序列化为Markdown
-- 版本管理: Git追踪Markdown变更
-
-**优势**:
-- 数据格式标准化，避免平台锁定
-- 本地优先，用户完全掌控数据
-- 跨平台一致性，任意终端查看同一Markdown
-
-#### 2.2.2 本地优先架构 (Local-First Architecture)
-
-**理念**: 所有操作优先本地，云端作为可选同步目标
+**理念**: 利用飞书官方CLI工具，无需任何中间层
 
 **实现**:
-- 本地存储优先: Desktop用File System，Web/Mobile用IndexedDB，鸿蒙用SQLite
-- 离线编辑支持: 所有终端支持离线编辑，联网后自动同步
-- 云端可选: 用户可选择同步到飞书、GitHub等任意平台
-- 冲突本地解决: 三向Diff + 冲突策略配置
+- 飞书CLI已实现飞书OAuth认证（`feishu auth login`）
+- 飞书CLI已实现Markdown ↔ 飞书Block转换
+- 飞书CLI支持upload/download/list/delete命令
+- Rust后端通过Process.spawn调用CLI命令
+- CLI输出解析为同步结果
 
 **优势**:
-- 数据主权: 用户数据不依赖云端
-- 性能优先: 本地操作零延迟
-- 灵活同步: 支持多目标、多策略同步
+- **官方工具**: 飞书官方维护，稳定可靠
+- **无需封装**: 不需要封装飞书API
+- **无需OAuth**: 飞书CLI已处理认证
+- **无需转换**: 飞书CLI已处理格式转换
+- **开发量最小**: 仅需集成CLI调用
+- **维护成本低**: 飞书官方维护CLI更新
 
-#### 2.2.3 可扩展插件架构 (Plugin-Based Extensibility)
+#### 2.2.2 本地编辑 + CLI同步模式
 
-**理念**: 核心功能通过Registry + Adapter模式，支持无限扩展
+**理念**: 本地编辑为主，通过飞书CLI命令同步到飞书
 
 **实现**:
-- **Sync Adapter Registry**: 云平台适配器注册中心
-- **AI Agent Registry**: Agent适配器注册中心
-- **Plugin System**: 现有插件系统扩展（Plugin API v1）
-- **MCP Ecosystem**: MCP工具生态（现有）
+- 本地KB文件编辑（ProseMirror编辑器）
+- 文件变更监听（FileWatcher）
+- 变更队列管理（SyncQueue）
+- Rust调用飞书CLI命令同步
+- CLI输出解析为同步状态
 
-**优势**:
-- 新增平台/Agent无需修改核心代码
-- 社区贡献适配器
-- 用户自定义集成
-
----
-
-## 三、多终端设计
-
-### 3.1 Desktop端 (已有基础)
-
-**现状**: Tauri v2 + Svelte 5 + ProseMirror + Rust后端
-
-**增强计划**:
-- 支持多窗口（已有）
-- 集成Sync Adapter（新增）
-- 集成Agent Adapter（新增）
-- 实时协同WebSocket（新增）
-
-**技术栈**:
-| 层 | 技术 | 版本 |
-|---|---|---|
-| Runtime | Tauri v2 | ≥2.9 |
-| Frontend | Svelte 5 + SvelteKit | ^5.0 |
-| Editor | Milkdown v7 (ProseMirror) | ^7.18 |
-| Backend | Rust | 2021 edition |
-| Build | Vite | ^6.0 |
-
-### 3.2 Web端 (PWA)
-
-**目标**: 浏览器访问，离线支持，与Desktop功能一致
-
-**架构**:
+**同步流程**:
 ```
-┌────────────────────────────────────────────────────────┐
-│ Web Frontend (SvelteKit SPA)                           │
-│  ┌──────────────┐  ┌──────────────┐                   │
-│  │ Editor       │  │ Agent Panel  │                   │
-│  │ (ProseMirror)│  │              │                   │
-│  └──────────────┘  └──────────────┘                   │
-│  ┌──────────────┐  ┌──────────────┐                   │
-│  │ Sync Manager │  │ IndexedDB    │                   │
-│  │              │  │ Storage      │                   │
-│  └──────────────┘  └──────────────┘                   │
-│  ┌──────────────┐                                     │
-│  │ Service      │  离线缓存、后台同步                 │
-│  │ Worker       │                                     │
-│  └──────────────┘                                     │
-└────────────────────────────────────────────────────────┘
-```
-
-**关键技术点**:
-- **@moraya/core**: 抽取核心逻辑为npm包，复用Editor/AI/Sync
-- **IndexedDB**: 本地存储（替代Desktop的File System）
-- **Service Worker**: 离线缓存、后台同步
-- **WebSocket**: 实时协同、Agent流式响应
-
-**PWA特性**:
-- 离线编辑
-- 后台同步（Service Worker）
-- 推送通知（Agent建议、协同消息）
-- 安装到桌面（桌面图标）
-
-### 3.3 Mobile端 (iOS/Android)
-
-**目标**: Tauri v2移动端支持，适配移动UI
-
-**技术栈**: Tauri v2 Mobile (iOS/Android)
-
-**UI适配**:
-- **编辑器**: ProseMirror触摸优化
-- **Agent面板**: 底部Sheet抽屉
-- **文件浏览**: List视图优先
-- **手势支持**: 双指缩放、三指滑动
-
-**关键特性**:
-- 离线编辑（本地SQLite/IndexedDB）
-- 云同步（飞书/Picora）
-- Agent协同（OpenClaw/Claude）
-- 实时协同（WebSocket + Yjs Awareness）
-
-### 3.4 HarmonyOS Next (可选)
-
-**决策点**: 等Phase 8完成后，评估Tauri官方是否支持鸿蒙
-
-**方案选择**:
-
-| 方案 | 条件 | 技术路线 | 工作量 |
-|------|------|----------|--------|
-| **Tauri移植** | Tauri官方支持鸿蒙 | 直接复用Desktop架构 | 1.5周 |
-| **ArkTS原生** | Tauri不支持 | ArkTS + @moraya/core移植 | 3周 |
-| **React Native** | 需跨平台优先 | RN + @moraya/core | 2周 |
-
-**推荐**: 等Tauri官方决策，优先ArkTS原生方案
-
-**ArkTS原生架构**:
-```
-┌────────────────────────────────────────────────────────┐
-│ HarmonyOS App (ArkTS)                                  │
-│  ┌──────────────┐  ┌──────────────┐                   │
-│  │ UI Layer     │  │ Core Layer   │                   │
-│  │ (ArkUI)      │  │ (@moraya     │                   │
-│  │              │  │ core移植)    │                   │
-│  └──────────────┘  └──────────────┘                   │
-│  ┌──────────────┐  ┌──────────────┐                   │
-│  │ Native API   │  │ SQLite       │                   │
-│  │ (@ohos.*)    │  │ Storage      │                   │
-│  └──────────────┘  └──────────────┘                   │
-└────────────────────────────────────────────────────────┘
-```
-
-**关键模块移植**:
-- MarkdownParser.ets (从markdown-it移植)
-- SyncEngine.ets (从kb-sync移植)
-- FeishuClient.ets (飞书API封装)
-- AgentService.ets (Agent封装)
-
----
-
-## 四、云端同步可扩展架构
-
-### 4.1 Sync Adapter Registry设计
-
-#### 4.1.1 核心接口抽象
-
-```typescript
-export interface CloudSyncAdapter {
-  // 基础信息
-  id: CloudPlatform;
-  name: string;
-  icon: string;
-  description: string;
-  features: AdapterFeature[];
-  
-  // 配置验证
-  validateConfig(config: Record<string, unknown>): Promise<boolean>;
-  testConnection(config: Record<string, unknown>): Promise<boolean>;
-  
-  // 文档操作接口（统一抽象）
-  listDocuments(options: ListOptions): Promise<DocManifestEntry[]>;
-  getDocument(id: string, options?: GetOptions): Promise<CloudDocument>;
-  createDocument(request: CreateDocRequest): Promise<CloudDocument>;
-  updateDocument(id: string, request: UpdateDocRequest): Promise<CloudDocument>;
-  deleteDocument(id: string): Promise<void>;
-  
-  // Markdown双向转换（核心扩展点）
-  mdToNative(content: string, options?: TransformOptions): Promise<NativeContent>;
-  nativeToMd(native: NativeContent, options?: TransformOptions): Promise<string>;
-  
-  // 同步能力
-  sync(binding: SyncBinding, options: SyncOptions): Promise<SyncResult>;
-  
-  // 实时监听（可选实现）
-  watch?(options: WatchOptions): Promise<WatchHandle>;
-  
-  // 特殊Block处理（扩展点）
-  unsupportedBlocks?: UnsupportedBlockHandler[];
-}
-```
-
-#### 4.1.2 Adapter能力矩阵
-
-| 平台 | realtime | history | comments | folder | permission | offline |
-|------|----------|---------|----------|--------|------------|---------|
-| **飞书** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Picora** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **GitHub** | - | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Notion** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **语雀** | - | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **GitLab** | - | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Google Docs** | ✓ | ✓ | ✓ | ✓ | ✓ | - |
-
-#### 4.1.3 Adapter配置Schema（统一结构）
-
-```typescript
-export interface SyncBindingConfig {
-  platform: CloudPlatform;
-  
-  // 通用字段
-  name: string;
-  enabled: boolean;
-  
-  // 平台特定配置（每个适配器定义自己的schema）
-  credentials: Record<string, unknown>;
-  
-  // 同步策略
-  strategy: {
-    mode: 'manual' | 'auto-save' | 'interval' | 'realtime';
-    intervalSecs?: number;
-    conflictPolicy: 'local-first' | 'remote-first' | 'auto-merge' | 'prompt';
-    scope: 'markdown-only' | 'all-files';
-    excludePatterns: string[];
-  };
-  
-  // 绑定关系
-  binding: {
-    localKbId: string;
-    remoteFolderId?: string;
-    remoteDocId?: string;
-  };
-}
-```
-
-### 4.2 飞书适配器详细设计
-
-#### 4.2.1 飞书Block ↔ Markdown转换规则
-
-| Markdown语法 | 飞书Block Type | 飞书字段 |
-|-------------|---------------|---------|
-| `# Heading` | block_type=2 | heading_level=1, text.content |
-| `## Heading` | block_type=2 | heading_level=2 |
-| `普通文本` | block_type=1 | text.content |
-| `- Bullet` | block_type=3 | text.content |
-| `1. Ordered` | block_type=4 | text.content |
-| `> Quote` | block_type=13 | text.content |
-| ` ```code``` ` | block_type=14 | code.content, code.language |
-| `- [ ] Task` | block_type=16 | todo.content, todo.is_done |
-| `Table` | block_type=24 | table.cells |
-| `![img](url)` | block_type=27 | image.file_token |
-| `**Bold**` | text_style | text_element_style.bold=true |
-| `*Italic*` | text_style | text_element_style.italic=true |
-| ` `inline` ` | text_style | text_element_style.inline_code=true |
-| `[link](url)` | text_style | text_element_style.link_url=url |
-
-#### 4.2.2 不支持Block处理策略
-
-```typescript
-unsupportedBlocks = [
-  {
-    blockType: 'math_block',  // LaTeX
-    strategy: 'preserve',
-    convertTo: '<!-- math -->\n$CONTENT$\n<!-- end-math -->'
-  },
-  {
-    blockType: 'mermaid',     // Mermaid图
-    strategy: 'preserve',
-    convertTo: '<!-- mermaid -->\n$CONTENT$\n<!-- end-mermaid -->'
-  },
-  {
-    blockType: 'callout',
-    strategy: 'convert',
-    convertTo: '> **注：** $CONTENT$'
-  },
-  {
-    blockType: 'front_matter',
-    strategy: 'preserve',
-    convertTo: '<!-- front-matter -->\n$CONTENT$\n<!-- end -->'
-  }
-];
-```
-
-#### 4.2.3 飞书OAuth登录流程
-
-```
-用户点击"连接飞书"
+本地文件变更
     ↓
-打开飞书OAuth WebView
+文件监听器检测
     ↓
-用户登录飞书授权
+变更入队
     ↓
-飞书回调 moraya://feishu-callback?code=xxx
+Rust调用飞书CLI命令
     ↓
-Rust后端用code换取user_access_token
+Process.spawn('feishu', ['upload', file, token])
     ↓
-存储token到OS Keychain
+飞书CLI执行上传
     ↓
-前端获取用户飞书文件夹列表
+飞书文档更新
     ↓
-用户选择目标文件夹
+CLI输出同步结果
     ↓
-创建KB ↔ 飞书文件夹Binding
-```
-
-### 4.3 三向Diff算法
-
-**继承现有kb-sync/diff.ts架构**
-
-```
-三向Diff原理:
-┌───────────────┐
-│ Last Manifest │  上次同步基准状态
-│ (lastSync)    │
-└───────────────┘
-        ↓
-┌───────────────┐     ┌───────────────┐
-│ Local Manifest│     │ Remote Manifest│
-│ (当前本地)    │     │ (当前云端)     │
-└───────────────┘     └───────────────┘
-        ↓                    ↓
-    计算变更:
-    - Local vs Last: 本地新增/删除/修改
-    - Remote vs Last: 云端新增/删除/修改
-    
-    三向合并:
-    1. Local新增 + Remote无变化 → upload
-    2. Remote新增 + Local无变化 → download
-    3. Local删除 + Remote无变化 → delete-remote
-    4. Remote删除 + Local无变化 → delete-local
-    5. Local修改 + Remote无变化 → upload
-    6. Remote修改 + Local无变化 → download
-    7. Local修改 + Remote修改 → conflict
-    8. Local修改 + Remote删除 → conflict
-    9. Local删除 + Remote修改 → conflict
+Rust解析CLI输出
+    ↓
+前端更新同步状态
 ```
 
 ---
 
-## 五、AI Agent可扩展架构
+## 三、飞书CLI集成设计
 
-### 5.1 AI Agent Registry设计
+### 3.1 飞书CLI命令封装（lark-cli实际命令）
 
-#### 5.1.1 核心接口抽象
+```bash
+# 飞书CLI命令（lark-cli - 飞书官方CLI工具）
+# CLI路径: /home/admin/.npm-global/bin/lark-cli
 
-```typescript
-export interface AIAgentAdapter {
-  // 基础信息
-  id: AgentType;
-  name: string;
-  provider: string;
-  icon: string;
-  description: string;
-  capabilities: AgentCapability[];
-  
-  // 配置验证
-  validateConfig(config: AgentConfig): Promise<boolean>;
-  testConnection(config: AgentConfig): Promise<boolean>;
+# 1. 认证登录
+lark-cli auth login [--domain docs,drive]
+# 设备流认证，生成二维码或链接进行登录
+# 输出: 认证成功，token保存在本地
 
-  // Agent核心接口
-  initialize(config: AgentConfig): Promise<AgentSession>;
-  chat(session: AgentSession, request: AgentRequest): Promise<AgentResponse>;
-  stream(session: AgentSession, request: AgentRequest): AsyncGenerator<AgentStreamChunk>;
-  terminate(session: AgentSession): Promise<void>;
+# 2. 飞书文档操作 (lark-cli docs)
+# 创建文档（从Markdown）
+lark-cli docs +create --title "标题" --markdown @file.md --folder-token "fld_xxx"
+# 输出: Document created: doc_xxx
 
-  // Agent能力（可选实现）
-  callTool?(session: AgentSession, tool: ToolCall): Promise<ToolResult>;
-  injectContext?(session: AgentSession, context: AgentContext): Promise<void>;
-  getMemory?(session: AgentSession): Promise<AgentMemory>;
-  setMemory?(session: AgentSession, memory: AgentMemory): Promise<void>;
+# 获取文档（导出为Markdown/JSON）
+lark-cli docs +fetch --doc "doc_xxx" --format json
+# 输出: 文档内容JSON
 
-  // Markdown协同（核心扩展点）
-  mdToAgentContext(doc: MarkdownDocument): AgentContext;
-  agentResultToMd(result: AgentResult, options?: InsertOptions): MarkdownInsert;
+# 更新文档
+lark-cli docs +update --doc "doc_xxx" --markdown @file.md --mode append
+# 支持模式: append, overwrite, replace_range, replace_all
+# 输出: Document updated: doc_xxx
+
+# 搜索文档
+lark-cli docs +search --query "关键词"
+# 输出: 文档列表JSON
+
+# 3. Drive文件操作 (lark-cli drive)
+# 列出文件夹内容
+lark-cli drive +list --folder-token "fld_xxx"
+# 输出: 文件列表JSON
+
+# 上传文件
+lark-cli drive +upload --file @file.md --folder-token "fld_xxx"
+# 输出: File uploaded: file_xxx
+
+# 下载文件
+lark-cli drive +download --file "file_xxx" --output /path/to/save
+# 输出: File downloaded to: /path/to/save
+
+# 4. Drive Markdown操作 (lark-cli markdown)
+# 创建Markdown文件
+lark-cli markdown +create --file @file.md --folder-token "fld_xxx"
+# 输出: Markdown file created: file_xxx
+
+# 获取Markdown文件
+lark-cli markdown +fetch --file "file_xxx"
+# 输出: Markdown内容
+
+# 覆盖Markdown文件
+lark-cli markdown +overwrite --file "file_xxx" --markdown @file.md
+# 输出: Markdown file updated: file_xxx
+
+# 5. 知识库操作 (lark-cli wiki)
+# 列出知识库
+lark-cli wiki +list
+# 输出: 知识库列表JSON
+
+# 创建知识库节点
+lark-cli wiki +create-node --wiki "wiki_xxx" --title "节点标题"
+# 输出: Node created: node_xxx
+```
+
+### 3.2 Rust后端CLI调用实现
+
+```rust
+// src-tauri/src/commands/lark_cli.rs
+
+use std::process::Command;
+use serde::{Deserialize, Serialize};
+use tauri::command;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LarkDocCreateResult {
+    document_id: String,
+    success: bool,
+    message: String,
 }
-```
 
-#### 5.1.2 Agent角色定义
-
-| 角色 | 职责 | Markdown操作模式 |
-|------|------|-----------------|
-| **co-author** | 共同创作 | 主动修改文档内容，保持作者风格 |
-| **reviewer** | 评审建议 | 评论格式，指出问题并提出建议 |
-| **researcher** | 信息搜集 | 提供参考资料、数据、来源链接 |
-| **translator** | 翻译员 | 翻译文档内容，保持格式风格 |
-| **summarizer** | 概括员 | 生成摘要、提炼核心要点 |
-| **tool-executor** | 工具执行者 | 调用MCP工具完成任务 |
-
-#### 5.1.3 Agent能力矩阵
-
-| Agent | streaming | toolCall | vision | memory | multiTurn | realtime | maxContext |
-|-------|-----------|----------|--------|--------|-----------|----------|------------|
-| **OpenClaw** | ✓ | ✓ | - | ✓ | ✓ | - | 128K |
-| **Claude** | ✓ | ✓ | ✓ | ✓ | ✓ | - | 200K |
-| **ChatGPT** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | 128K |
-| **Gemini** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | 1M |
-| **DeepSeek** | ✓ | ✓ | - | ✓ | ✓ | - | 64K |
-
-### 5.2 Agent协同引擎设计
-
-#### 5.2.1 上下文注入机制
-
-```typescript
-export interface AgentContext {
-  // 文档上下文
-  documentId?: string;
-  documentPath?: string;
-  documentContent?: string;      // 当前文档全文
-  selectedText?: string;         // 用户选中文本
-  selectionAnchor?: AnchorPosition;  // 选区锚点
-  
-  // KB上下文
-  kbId?: string;
-  kbName?: string;
-  kbFiles?: KBFileInfo[];        // KB内文件列表
-  
-  // Agent上下文
-  role: AgentRole;
-  instructions?: string;         // Agent角色指令
-  rules?: string;                // MORAYA.md规则内容
+#[derive(Debug, Serialize, Deserialize)]
+struct LarkDocFetchResult {
+    content: String,
+    format: String,
+    success: bool,
 }
 
-// 注入流程:
-1. 用户打开文档 → 读取documentContent
-2. 用户选中文本 → 读取selectedText + selectionAnchor
-3. 读取KB规则文件 → 读取rules (MORAYA.md)
-4. 构建AgentContext对象 → injectContext(session, context)
-5. Agent接收上下文 → 系统指令 + 规则 + 文档内容
-```
+#[derive(Debug, Serialize, Deserialize)]
+struct LarkDocUpdateResult {
+    document_id: String,
+    success: bool,
+    message: String,
+}
 
-#### 5.2.2 Block级AI操作标记
+#[derive(Debug, Serialize, Deserialize)]
+struct LarkFileInfo {
+    file_token: String,
+    name: String,
+    r#type: String,
+    updated_at: String,
+}
 
-```markdown
-<!-- AI Agent操作示例 -->
-
-:::ai-operation id="op_001" session="session_abc" role="co-author"
-**AI协同编辑 (OpenClaw Agent):**
-这段内容是Agent补充的，用户可以接受、修改或拒绝。
-
-[接受] [修改] [拒绝] [讨论]
-:::
-
-:::ai-comment id="op_002" session="session_xyz" role="reviewer"
-> **评审建议 (Claude Agent):**
-> 这段逻辑表述不够清晰，建议重构为更清晰的表达方式。
-:::
-
-:::ai-suggestion id="op_003" session="session_xyz" status="pending"
-**AI建议:**
-请考虑添加更多示例代码。
-:::
-
-<!-- 人机讨论线程 -->
-:::ai-thread op-id="op_001"
-**用户:** 这段内容太长了，请精简。
-**OpenClaw:** 好的，我来概括为3个要点...
-**用户:** 保留1和2，删除3。
-**OpenClaw:** 已修改，请查看。
-:::
-```
-
-#### 5.2.3 Agent操作Sidecar存储
-
-**继承review-service架构**
-
-```
-存储路径: {kbRoot}/.moraya/agent-ops/{relDocPath}.ops.json
-
-文件结构:
-{
-  "version": 1,
-  "documentPath": "article.md",
-  "operations": [
-    {
-      "id": "op_001",
-      "type": "write",
-      "blockId": "blk_123",
-      "content": "AI生成的内容",
-      "status": "pending",
-      "author": {
-        "type": "agent",
-        "agentType": "openclaw",
-        "role": "co-author"
-      },
-      "createdAt": "2026-05-07T10:00:00Z",
-      "thread": [
-        {"author": "user", "text": "精简一点", "timestamp": "..."},
-        {"author": "agent", "text": "好的", "timestamp": "..."}
-      ]
+/// lark-cli 认证登录
+#[command]
+pub async fn lark_cli_auth_login(
+    cli_path: String,
+    domain: Option<String>,
+) -> Result<String, String> {
+    let mut args = vec!["auth", "login"];
+    if let Some(d) = domain {
+        args.extend_from_slice(&["--domain", &d]);
     }
-  ]
+    
+    let output = Command::new(&cli_path)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli auth failed: {}", stderr))
+    }
+}
+
+/// lark-cli 创建文档（从Markdown）
+#[command]
+pub async fn lark_cli_docs_create(
+    cli_path: String,
+    title: String,
+    markdown_file: String,
+    folder_token: String,
+) -> Result<LarkDocCreateResult, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "docs",
+            "+create",
+            "--title", &title,
+            "--markdown", &format!("@{}", markdown_file),
+            "--folder-token", &folder_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    if output.status.success() {
+        let document_id = parse_document_id(&stdout)?;
+        Ok(LarkDocCreateResult {
+            document_id,
+            success: true,
+            message: stdout.to_string(),
+        })
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli docs create failed: {}", stderr))
+    }
+}
+
+/// lark-cli 获取文档
+#[command]
+pub async fn lark_cli_docs_fetch(
+    cli_path: String,
+    doc_token: String,
+    format: String,
+) -> Result<LarkDocFetchResult, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "docs",
+            "+fetch",
+            "--doc", &doc_token,
+            "--format", &format,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    if output.status.success() {
+        Ok(LarkDocFetchResult {
+            content: stdout.to_string(),
+            format,
+            success: true,
+        })
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli docs fetch failed: {}", stderr))
+    }
+}
+
+/// lark-cli 更新文档
+#[command]
+pub async fn lark_cli_docs_update(
+    cli_path: String,
+    doc_token: String,
+    markdown_file: String,
+    mode: String,
+) -> Result<LarkDocUpdateResult, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "docs",
+            "+update",
+            "--doc", &doc_token,
+            "--markdown", &format!("@{}", markdown_file),
+            "--mode", &mode,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    if output.status.success() {
+        Ok(LarkDocUpdateResult {
+            document_id: doc_token,
+            success: true,
+            message: stdout.to_string(),
+        })
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli docs update failed: {}", stderr))
+    }
+}
+
+/// lark-cli 搜索文档
+#[command]
+pub async fn lark_cli_docs_search(
+    cli_path: String,
+    query: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "docs",
+            "+search",
+            "--query", &query,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli docs search failed: {}", stderr))
+    }
+}
+
+/// lark-cli 列出Drive文件
+#[command]
+pub async fn lark_cli_drive_list(
+    cli_path: String,
+    folder_token: String,
+) -> Result<Vec<LarkFileInfo>, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "drive",
+            "+list",
+            "--folder-token", &folder_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    if output.status.success() {
+        parse_file_list(&stdout)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli drive list failed: {}", stderr))
+    }
+}
+
+/// lark-cli 上传文件到Drive
+#[command]
+pub async fn lark_cli_drive_upload(
+    cli_path: String,
+    file_path: String,
+    folder_token: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "drive",
+            "+upload",
+            "--file", &format!("@{}", file_path),
+            "--folder-token", &folder_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli drive upload failed: {}", stderr))
+    }
+}
+
+/// lark-cli 下载文件
+#[command]
+pub async fn lark_cli_drive_download(
+    cli_path: String,
+    file_token: String,
+    output_path: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "drive",
+            "+download",
+            "--file", &file_token,
+            "--output", &output_path,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli drive download failed: {}", stderr))
+    }
+}
+
+/// lark-cli 创建Markdown文件
+#[command]
+pub async fn lark_cli_markdown_create(
+    cli_path: String,
+    markdown_file: String,
+    folder_token: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "markdown",
+            "+create",
+            "--file", &format!("@{}", markdown_file),
+            "--folder-token", &folder_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli markdown create failed: {}", stderr))
+    }
+}
+
+/// lark-cli 获取Markdown文件
+#[command]
+pub async fn lark_cli_markdown_fetch(
+    cli_path: String,
+    file_token: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "markdown",
+            "+fetch",
+            "--file", &file_token,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli markdown fetch failed: {}", stderr))
+    }
+}
+
+/// lark-cli 覆盖Markdown文件
+#[command]
+pub async fn lark_cli_markdown_overwrite(
+    cli_path: String,
+    file_token: String,
+    markdown_file: String,
+) -> Result<String, String> {
+    let output = Command::new(&cli_path)
+        .args(&[
+            "markdown",
+            "+overwrite",
+            "--file", &file_token,
+            "--markdown", &format!("@{}", markdown_file),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute lark-cli: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("lark-cli markdown overwrite failed: {}", stderr))
+    }
+}
+
+// 辅助函数：解析文档ID
+fn parse_document_id(stdout: &str) -> Result<String, String> {
+    // 解析lark-cli输出格式
+    // 可能格式: Document created: doc_xxx
+    // 或 JSON格式: {"document_id": "doc_xxx"}
+    
+    for line in stdout.lines() {
+        if line.contains("doc_") || line.contains("Document created:") {
+            // 尝试提取doc_xxx格式的ID
+            let words: Vec<&str> = line.split_whitespace().collect();
+            for word in words {
+                if word.starts_with("doc_") {
+                    return Ok(word.trim_end_matches(',').to_string());
+                }
+            }
+        }
+    }
+    
+    // 尝试JSON解析
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(stdout) {
+        if let Some(doc_id) = json.get("document_id").and_then(|v| v.as_str()) {
+            return Ok(doc_id.to_string());
+        }
+    }
+    
+    Err("Failed to parse document ID from lark-cli output".to_string())
+}
+
+// 辅助函数：解析文件列表
+fn parse_file_list(stdout: &str) -> Result<Vec<LarkFileInfo>, String> {
+    // 尝试JSON解析
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(stdout) {
+        if let Some(files) = json.get("files").and_then(|v| v.as_array()) {
+            let mut result = Vec::new();
+            for file in files {
+                if let (Some(token), Some(name), Some(typ), Some(updated)) = (
+                    file.get("token").and_then(|v| v.as_str()),
+                    file.get("name").and_then(|v| v.as_str()),
+                    file.get("type").and_then(|v| v.as_str()),
+                    file.get("updated_at").and_then(|v| v.as_str()),
+                ) {
+                    result.push(LarkFileInfo {
+                        file_token: token.to_string(),
+                        name: name.to_string(),
+                        r#type: typ.to_string(),
+                        updated_at: updated.to_string(),
+                    });
+                }
+            }
+            return Ok(result);
+        }
+    }
+    
+    Err("Failed to parse file list from lark-cli output".to_string())
 }
 ```
 
-### 5.3 OpenClaw Agent详细设计
+### 3.3 前端CLI配置UI
 
-#### 5.3.1 OpenClaw Agent配置Schema
+```svelte
+<!-- src/lib/components/settings/LarkCliConfig.svelte -->
 
-```typescript
-export interface OpenClawConfig extends AgentConfig {
-  type: 'openclaw';
-  apiKey: string;
-  baseUrl?: string;            // 默认 https://api.openclaw.ai/v1
-  model?: string;              // 默认 openclaw-agent-v1
-  role?: AgentRole;
+<script lang="ts">
+  import { invoke } from '@tauri-apps/api/core';
+
+  let cliPath = $state('/home/admin/.npm-global/bin/lark-cli');  // lark-cli路径
+  let folderToken = $state('');
+  let domain = $state('docs');  // docs 或 drive
+  let authStatus = $state<'idle' | 'logging' | 'success' | 'error'>('idle');
+
+  async function authLogin() {
+    authStatus = 'logging';
+    try {
+      const result = await invoke<string>('lark_cli_auth_login', {
+        cliPath,
+        domain
+      });
+      authStatus = 'success';
+    } catch (err) {
+      authStatus = 'error';
+      console.error('Auth failed:', err);
+    }
+  }
+
+  async function createDocument() {
+    const result = await invoke('lark_cli_docs_create', {
+      cliPath,
+      title: 'Test Document',
+      markdownFile: '/tmp/test.md',
+      folderToken
+    });
+    console.log('Document created:', result);
+  }
+
+  async function fetchDocument(docToken: string) {
+    const result = await invoke('lark_cli_docs_fetch', {
+      cliPath,
+      docToken,
+      format: 'json'
+    });
+    console.log('Document fetched:', result);
+  }
+
+  async function listFiles() {
+    const result = await invoke('lark_cli_drive_list', {
+      cliPath,
+      folderToken
+    });
+    console.log('Files listed:', result);
+  }
+</script>
+
+<div class="cli-config">
+  <div class="form-group">
+    <label>lark-cli路径:</label>
+    <input type="text" bind:value={cliPath} placeholder="/path/to/lark-cli" />
+  </div>
+
+  <div class="form-group">
+    <label>认证域:</label>
+    <select bind:value={domain}>
+      <option value="docs">docs</option>
+      <option value="drive">drive</option>
+      <option value="docs,drive">docs,drive</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label>飞书文件夹Token:</label>
+    <input type="text" bind:value={folderToken} placeholder="fld_xxx" />
+  </div>
+
+  <button onclick={authLogin} disabled={authStatus === 'logging'}>
+    {authStatus === 'logging' ? '登录中...' : 'lark-cli认证'}
+  </button>
+
+  {#if authStatus === 'success'}
+    <div class="status success">✓ lark-cli认证成功</div>
+  {:else if authStatus === 'error'}
+    <div class="status error">✗ 认证失败</div>
+  {/if}
+
+  {#if authStatus === 'success'}
+    <div class="actions">
+      <button onclick={createDocument}>创建测试文档</button>
+      <button onclick={listFiles}>列出文件</button>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .cli-config {
+    padding: 1rem;
+  }
   
-  // OpenClaw特有配置
-  options?: {
-    creativityLevel?: 'low' | 'medium' | 'high';  // 创造性程度
-    preserveStyle?: boolean;                       // 保持作者风格
-    maxSuggestions?: number;                       // 最大建议数
-    autoAcceptThreshold?: number;                  // 自动接受阈值(质量评分)
-  };
-}
-```
-
-#### 5.3.2 OpenClaw Agent系统指令模板
-
-```typescript
-const roleInstructions: Record<AgentRole, string> = {
-  'co-author': `
-你是一个专业的Markdown文档协作者。
-职责:
-- 主动修改文档内容，提升质量和可读性
-- 保持作者的写作风格和语气
-- 遵循文档规则（MORAYA.md）的指导
-- 使用Markdown格式输出
-- 在适当位置插入你的修改
-
-输出格式:
-- 直接输出修改后的Markdown内容
-- 使用 :::ai-operation 包裹你的修改
-- 等待用户确认后再执行`,
+  .form-group {
+    margin-bottom: 1rem;
+  }
   
-  'reviewer': `
-你是一个文档评审专家。
-职责:
-- 指出文档中的问题（逻辑错误、表达不清、格式问题）
-- 提出改进建议
-- 不直接修改文档，使用评论格式
-
-输出格式:
-- 使用 :::ai-comment 包裹评论
-- 精确定位到问题段落（使用锚点）
-- 给出具体改进建议`,
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
   
-  'researcher': `
-你是一个信息搜集助手。
-职责:
-- 为作者提供相关资料、数据、参考来源
-- 搜集主题相关的背景信息
-- 提供可信来源链接
-
-输出格式:
-- 使用 :::ai-tool-call 展示工具调用结果
-- 提供结构化的参考资料列表`
-};
+  .form-group input, .form-group select {
+    width: 100%;
+    padding: 0.5rem;
+  }
+  
+  .status {
+    padding: 0.5rem;
+    margin-top: 1rem;
+    border-radius: 4px;
+  }
+  
+  .status.success {
+    background-color: #d4edda;
+    color: #155724;
+  }
+  
+  .status.error {
+    background-color: #f8d7da;
+    color: #721c24;
+  }
+  
+  .actions {
+    margin-top: 1rem;
+    display: flex;
+    gap: 0.5rem;
+  }
+</style>
 ```
 
 ---
 
-## 六、实时协同编辑设计
+## 四、同步引擎设计
 
-### 6.1 CRDT引擎选型
-
-**选择Yjs（推荐）**
-
-| 特性 | Yjs | Automerge |
-|------|-----|-----------|
-| ProseMirror绑定 | y-prosemirror（成熟） | 无官方绑定 |
-| 性能 | 高性能、低内存 | 较高性能 |
-| WebSocket Provider | y-websocket（成熟） | 需自行实现 |
-| Awareness | ✓（内置） | 需自行实现 |
-| 社区生态 | 大、活跃 | 较小 |
-| 文档大小支持 | 大文档优化 | 大文档较慢 |
-
-### 6.2 Yjs集成架构
-
-```
-┌────────────────────────────────────────────────────────┐
-│ Editor Layer (ProseMirror)                             │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ ProseMirror Editor                                │  │
-│  │  ┌────────────────────────────────────────────┐  │  │
-│  │  │ Y.Doc (Yjs CRDT)                           │  │  │
-│  │  │  - Y.XmlFragment (文档内容)                │  │  │
-│  │  │  - Y.Map (文档元数据)                      │  │  │
-│  │  │  - Awareness (用户状态)                    │  │  │
-│  │  └────────────────────────────────────────────┘  │  │
-│  │  ┌────────────────────────────────────────────┐  │  │
-│  │  │ y-prosemirror binding                       │  │  │
-│  │  │  - ProseMirror ↔ Y.XmlFragment同步         │  │  │
-│  │  │  - 操作自动转换为Yjs操作                   │  │  │
-│  │  └────────────────────────────────────────────┘  │  │
-│  └──────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────┘
-                          ↓
-┌────────────────────────────────────────────────────────┐
-│ Sync Layer (Yjs Providers)                             │
-│  ┌──────────────┐  ┌──────────────┐                   │
-│  │ Websocket    │  │ Webrtc       │                   │
-│  │ Provider     │  │ Provider     │                   │
-│  │ (服务器同步) │  │ (P2P同步)    │                   │
-│  └──────────────┘  └──────────────┘                   │
-│  ┌──────────────┐                                     │
-│  │ IndexedDB    │  本地持久化                         │
-│  │ Provider     │                                     │
-│  └──────────────┘                                     │
-└────────────────────────────────────────────────────────┘
-```
-
-### 6.3 Awareness（在线状态）
+### 4.1 SyncEngine（基于lark-cli）
 
 ```typescript
-interface AwarenessState {
-  user: {
-    id: string;
-    name: string;
-    color: string;        // 光标颜色
-    avatar?: string;
-  };
-  cursor?: {
-    from: number;         // ProseMirror位置
-    to: number;
-  };
-  selection?: {
-    from: number;
-    to: number;
-  };
-  editing?: {
-    blockId: string;      // 正在编辑的Block ID
-  };
-  agent?: {
-    sessionId: string;    // 正在使用的Agent会话
-    role: AgentRole;
-  };
+// src/lib/services/sync-engine.ts
+
+import { invoke } from '@tauri-apps/api/core';
+import { FileWatcher } from './file-watcher';
+
+export interface LarkCliConfig {
+  cliPath: string;           // lark-cli路径
+  folderToken: string;       // 飞书文件夹Token
+  kbPath: string;            // KB路径
+  syncMode: 'docs' | 'drive' | 'markdown';  // 同步模式
+}
+
+export class SyncEngine {
+  private config: LarkCliConfig;
+  private fileWatcher: FileWatcher;
+  private syncQueue: FileChange[] = [];
+  private autoSync: boolean = false;
+
+  constructor(config: LarkCliConfig) {
+    this.config = config;
+    this.fileWatcher = new FileWatcher();
+  }
+
+  // 初始化同步
+  async initialize(): Promise<void> {
+    // 验证lark-cli认证
+    const authResult = await invoke<string>('lark_cli_auth_login', {
+      cliPath: this.config.cliPath,
+      domain: this.config.syncMode
+    });
+
+    // 启动文件监听
+    await this.fileWatcher.startWatch(this.config.kbPath);
+    
+    this.fileWatcher.onChange((change) => {
+      this.syncQueue.push(change);
+      
+      if (this.autoSync) {
+        this.syncChange(change);
+      }
+    });
+  }
+
+  // 创建飞书文档（使用lark-cli docs）
+  async createDocument(markdownFile: string, title: string): Promise<string> {
+    const result = await invoke<{
+      document_id: string;
+      success: boolean;
+    }>('lark_cli_docs_create', {
+      cliPath: this.config.cliPath,
+      title,
+      markdownFile,
+      folderToken: this.config.folderToken
+    });
+
+    return result.document_id;
+  }
+
+  // 获取飞书文档（使用lark-cli docs）
+  async fetchDocument(docToken: string, format: string = 'json'): Promise<string> {
+    const result = await invoke<{
+      content: string;
+      success: boolean;
+    }>('lark_cli_docs_fetch', {
+      cliPath: this.config.cliPath,
+      docToken,
+      format
+    });
+
+    return result.content;
+  }
+
+  // 更新飞书文档（使用lark-cli docs）
+  async updateDocument(docToken: string, markdownFile: string, mode: string = 'overwrite'): Promise<void> {
+    await invoke('lark_cli_docs_update', {
+      cliPath: this.config.cliPath,
+      docToken,
+      markdownFile,
+      mode
+    });
+  }
+
+  // 上传文件到Drive（使用lark-cli drive）
+  async uploadFile(filePath: string): Promise<string> {
+    const result = await invoke<string>('lark_cli_drive_upload', {
+      cliPath: this.config.cliPath,
+      filePath,
+      folderToken: this.config.folderToken
+    });
+
+    return result;
+  }
+
+  // 下载文件（使用lark-cli drive）
+  async downloadFile(fileToken: string, outputPath: string): Promise<void> {
+    await invoke('lark_cli_drive_download', {
+      cliPath: this.config.cliPath,
+      fileToken,
+      outputPath
+    });
+  }
+
+  // 列出Drive文件（使用lark-cli drive）
+  async listFiles(): Promise<FileInfo[]> {
+    const result = await invoke<FileInfo[]>('lark_cli_drive_list', {
+      cliPath: this.config.cliPath,
+      folderToken: this.config.folderToken
+    });
+
+    return result;
+  }
+
+  // 创建Markdown文件（使用lark-cli markdown）
+  async createMarkdownFile(markdownFile: string): Promise<string> {
+    const result = await invoke<string>('lark_cli_markdown_create', {
+      cliPath: this.config.cliPath,
+      markdownFile,
+      folderToken: this.config.folderToken
+    });
+
+    return result;
+  }
+
+  // 获取Markdown文件（使用lark-cli markdown）
+  async fetchMarkdownFile(fileToken: string): Promise<string> {
+    const result = await invoke<string>('lark_cli_markdown_fetch', {
+      cliPath: this.config.cliPath,
+      fileToken
+    });
+
+    return result;
+  }
+
+  // 覆盖Markdown文件（使用lark-cli markdown）
+  async overwriteMarkdownFile(fileToken: string, markdownFile: string): Promise<void> {
+    await invoke('lark_cli_markdown_overwrite', {
+      cliPath: this.config.cliPath,
+      fileToken,
+      markdownFile
+    });
+  }
+
+  // 首次同步上传（KB → 飞书）
+  async firstSyncUpload(): Promise<void> {
+    // 扫描KB文件
+    const files = await invoke<KBFileInfo[]>('kb_scan_files', {
+      kbPath: this.config.kbPath
+    });
+
+    // 根据syncMode选择同步方式
+    if (this.config.syncMode === 'docs') {
+      // 使用docs命令同步（Markdown → 飞书文档）
+      for (const file of files) {
+        await this.createDocument(file.path, file.name);
+      }
+    } else if (this.config.syncMode === 'markdown') {
+      // 使用markdown命令同步（Markdown → Drive Markdown文件）
+      for (const file of files) {
+        await this.createMarkdownFile(file.path);
+      }
+    } else {
+      // 使用drive命令同步（文件上传）
+      for (const file of files) {
+        await this.uploadFile(file.path);
+      }
+    }
+  }
+
+  // 首次同步下载（飞书 → KB）
+  async firstSyncDownload(): Promise<void> {
+    // 获取飞书文件列表
+    const files = await this.listFiles();
+
+    // 根据syncMode选择下载方式
+    if (this.config.syncMode === 'markdown') {
+      // 使用markdown fetch下载
+      for (const file of files) {
+        const content = await this.fetchMarkdownFile(file.file_token);
+        await invoke('kb_write_file', {
+          kbPath: this.config.kbPath,
+          fileName: file.name,
+          content
+        });
+      }
+    } else {
+      // 使用drive download下载
+      for (const file of files) {
+        await this.downloadFile(
+          file.file_token,
+          `${this.config.kbPath}/${file.name}`
+        );
+      }
+    }
+  }
+
+  // 同步单个变更
+  private async syncChange(change: FileChange): Promise<void> {
+    if (change.type === 'create' || change.type === 'update') {
+      // 根据syncMode选择同步方式
+      if (this.config.syncMode === 'docs') {
+        const docId = await this.findDocumentId(change.path);
+        if (docId) {
+          await this.updateDocument(docId, change.path, 'overwrite');
+        } else {
+          await this.createDocument(change.path, change.name);
+        }
+      } else if (this.config.syncMode === 'markdown') {
+        const fileToken = await this.findFileToken(change.path);
+        if (fileToken) {
+          await this.overwriteMarkdownFile(fileToken, change.path);
+        } else {
+          await this.createMarkdownFile(change.path);
+        }
+      } else {
+        await this.uploadFile(change.path);
+      }
+    } else if (change.type === 'delete') {
+      // 需要映射本地文件 → 飞书文件Token
+      const fileToken = await this.findFileToken(change.path);
+      if (fileToken) {
+        // 删除飞书文件（需实现lark_cli_delete命令）
+        // await invoke('lark_cli_delete', { cliPath, fileToken });
+      }
+    }
+  }
+
+  // 手动触发同步
+  async triggerSync(): Promise<void> {
+    for (const change of this.syncQueue) {
+      await this.syncChange(change);
+    }
+    this.syncQueue = [];
+  }
+
+  // 设置自动同步
+  setAutoSync(enabled: boolean): void {
+    this.autoSync = enabled;
+  }
+
+  // 映射本地文件 → 飞书文档ID（需要维护映射表）
+  private async findDocumentId(localPath: string): Promise<string | null> {
+    // 从本地Manifest或sidecar文件中查找映射
+    // ...
+    return null;
+  }
+
+  // 映射本地文件 → 飞书文件Token（需要维护映射表）
+  private async findFileToken(localPath: string): Promise<string | null> {
+    // 从本地Manifest或sidecar文件中查找映射
+    // ...
+    return null;
+  }
+}
+
+interface FileInfo {
+  file_token: string;
+  name: string;
+  type: string;
+  updated_at: string;
+}
+
+interface KBFileInfo {
+  path: string;
+  name: string;
+}
+
+interface FileChange {
+  type: 'create' | 'update' | 'delete';
+  path: string;
+  name: string;
 }
 ```
 
 ---
 
-## 七、安全与隐私设计
+## 五、技术选型（v4）
 
-### 7.1 安全架构分层
+### 5.1 核心技术栈
 
-```
-┌────────────────────────────────────────────────────────┐
-│ Layer 1: 用户数据主权                                  │
-│  - 本地优先架构                                        │
-│  - 用户完全掌控数据                                    │
-│  - 云同步可选、可撤销                                  │
-└────────────────────────────────────────────────────────┘
-                          ↓
-┌────────────────────────────────────────────────────────┐
-│ Layer 2: 密钥安全                                      │
-│  - OS Keychain存储 (macOS/Windows/Linux)              │
-│  - API Key不暴露前端                                   │
-│  - Rust后端代理所有API调用                             │
-└────────────────────────────────────────────────────────┘
-                          ↓
-┌────────────────────────────────────────────────────────┐
-│ Layer 3: 传输安全                                      │
-│  - TLS加密传输                                         │
-│  - WebSocket加密                                       │
-│  - HMAC请求签名 (对象存储)                             │
-└────────────────────────────────────────────────────────┘
-                          ↓
-┌────────────────────────────────────────────────────────┐
-│ Layer 4: 前端安全                                      │
-│  - CSP强制执行                                         │
-│  - XSS防护 (HTML导出消毒)                              │
-│  - Path Traversal防护                                  │
-└────────────────────────────────────────────────────────┘
-                          ↓
-┌────────────────────────────────────────────────────────┐
-│ Layer 5: Agent安全                                     │
-│  - Agent操作范围限制                                   │
-│  - 用户确认机制 (接受/拒绝)                            │
-│  - 操作审计追踪                                        │
-│  - 工具调用权限控制                                    │
-└────────────────────────────────────────────────────────┘
-                          ↓
-┌────────────────────────────────────────────────────────┐
-│ Layer 6: 云平台安全                                    │
-│  - OAuth授权（飞书等）                                 │
-│  - 用户自持密钥 (BYOK)                                 │
-│  - 无中间服务器（直连云平台）                          │
-│  - 客户端加密（可选E2E）                               │
-└────────────────────────────────────────────────────────┘
-```
+| 层 | 技术 | 版本 | 说明 |
+|---|------|------|------|
+| **Runtime** | Tauri v2 | ≥2.9 | Desktop应用 |
+| **Frontend** | Svelte 5 | ^5.0 | UI框架 |
+| **Editor** | ProseMirror | via Milkdown v7 | Markdown编辑器 |
+| **Backend** | Rust | 2021 edition | CLI调用 + 文件监听 |
+| **飞书CLI** | 飞书官方CLI | latest | 飞书文档操作 |
 
-### 7.2 Agent操作审计
+### 5.2 外部依赖
 
-```typescript
-interface AuditLog {
-  id: string;
-  timestamp: string;
-  operation: {
-    type: 'agent-write' | 'agent-edit' | 'agent-comment' | 'tool-call';
-    agentType: AgentType;
-    agentRole: AgentRole;
-    sessionId: string;
-  };
-  target: {
-    documentPath: string;
-    blockId?: string;
-    anchor?: AnchorPosition;
-  };
-  content: {
-    before?: string;       // 操作前内容
-    after?: string;        // 操作后内容
-    delta?: string;        // 变化量
-  };
-  userAction?: {
-    decision: 'accept' | 'reject' | 'modify';
-    reason?: string;
-    timestamp: string;
-  };
-}
-```
+| 依赖 | 提供方 | 作用 |
+|------|--------|------|
+| **飞书CLI** | 飞书官方 | 飞书云文档操作（upload/download/list） |
+| **飞书OAuth** | 飞书CLI内置 | 飞书认证（CLI已实现） |
+| **飞书Block转换** | 飞书CLI内置 | Markdown ↔ 飞书Block（CLI已实现） |
 
 ---
 
-## 八、性能与可扩展性设计
+## 六、方案设计总结（v4）
 
-### 8.1 性能优化策略
+### 6.1 核心设计亮点
 
-| 模块 | 优化策略 | 实现方式 |
-|------|----------|----------|
-| **编辑器** | 懒加载渲染 | Mermaid/KaTeX懒加载（已有） |
-| **编辑器** | 文档缓存 | Doc Cache v2（已有） |
-| **同步** | 分块上传 | 大文件分块同步 |
-| **同步** | 断点续传 | 上传中断恢复 |
-| **Agent** | 流式响应 | WebSocket/SSE实时输出 |
-| **Agent** | 上下文压缩 | KB向量搜索精简上下文 |
-| **CRDT** | 大文档优化 | Yjs大文档性能优化 |
-| **存储** | IndexedDB优化 | 分库存储、批量写入 |
+1. **飞书CLI直接集成**: 无需任何中间层，架构最简化
+2. **CLI调用模式**: Rust通过Process.spawn调用CLI命令
+3. **官方工具**: 飞书官方维护，稳定可靠
+4. **开发量最小**: 仅需集成CLI调用，无需封装API
+5. **维护成本低**: 飞书官方维护CLI更新
 
-### 8.2 可扩展性设计
+### 6.2 与v1/v2/v3对比
 
-#### 8.2.1 新增云平台步骤
+| 项目 | v1（原方案） | v2（OpenClaw） | v3（Agent） | **v4（飞书CLI）** |
+|------|-------------|--------------|------------|------------------|
+| **核心** | 飞书API封装 | OpenClaw中间层 | Agent工具调用 | **飞书CLI直接集成** |
+| **架构** | 多层架构 | 中间层架构 | Agent Registry | **最简化架构** |
+| **依赖** | 需封装飞书OAuth | OpenClaw服务 | OpenClaw Agent | **飞书CLI（官方）** |
+| **开发量** | 420h | 300h | 428h | **~150h** |
+| **周期** | 18-21周 | 7周 | 8-9周 | **~4周** |
+| **维护成本** | 高（需维护API） | 中（依赖OpenClaw） | 高（Agent架构） | **低（飞书官方）** |
 
-```typescript
-// 1. 定义CloudPlatform枚举
-export type CloudPlatform = 'new-platform';
-
-// 2. 实现Adapter接口
-class NewPlatformAdapter implements CloudSyncAdapter {
-  id = 'new-platform';
-  name = 'New Platform';
-  // ...实现所有接口方法
-}
-
-// 3. 定义Config Schema
-export interface NewPlatformConfig extends SyncBindingConfig {
-  platform: 'new-platform';
-  credentials: {
-    apiKey: string;
-    baseUrl?: string;
-  };
-}
-
-// 4. 注册到Registry
-syncRegistry.register(new NewPlatformAdapter());
-
-// 5. 前端配置UI
-<svelte:component this={NewPlatformConfigForm} platform="new-platform" />
-```
-
-#### 8.2.2 新增AI Agent步骤
-
-```typescript
-// 1. 定义AgentType枚举
-export type AgentType = 'new-agent';
-
-// 2. 实现Adapter接口
-class NewAgentAdapter implements AIAgentAdapter {
-  id = 'new-agent';
-  name = 'New Agent';
-  // ...实现所有接口方法
-}
-
-// 3. 定义Config Schema
-export interface NewAgentConfig extends AgentConfig {
-  type: 'new-agent';
-  apiKey: string;
-  baseUrl?: string;
-}
-
-// 4. 注册到Registry
-agentRegistry.register(new NewAgentAdapter());
-
-// 5. 前端Agent面板
-<option value="new-agent">New Agent</option>
-```
-
----
-
-## 九、技术选型总览
-
-### 9.1 核心技术栈
-
-| 层 | 技术 | 版本 | 选择理由 |
-|---|------|------|---------|
-| **Runtime** | Tauri v2 | ≥2.9 | 跨平台、性能优、Rust后端 |
-| **Frontend** | Svelte 5 | ^5.0 | 轻量、响应式、编译优化 |
-| **Editor** | ProseMirror | via Milkdown v7 | WYSIWYG、可扩展、成熟 |
-| **CRDT** | Yjs | latest | 性能优、生态成熟、ProseMirror绑定 |
-| **Markdown Parser** | markdown-it | ^14.1 | CommonMark + GFM、插件丰富 |
-| **Backend** | Rust | 2021 edition | 性能、安全、Tauri原生 |
-| **Storage (Desktop)** | File System | Native | 本地优先 |
-| **Storage (Web/Mobile)** | IndexedDB | Native | 离线支持 |
-| **Storage (HarmonyOS)** | SQLite | @ohos.data | 鸿蒙原生 |
-
-### 9.2 云平台API选型
-
-| 平台 | API协议 | 认证方式 | 关键API |
-|------|---------|----------|---------|
-| **飞书** | REST + WebSocket | OAuth + tenant_access_token | docx:v1/documents, blocks |
-| **Picora** | REST | Bearer token | /v1/kbs, /v1/media |
-| **GitHub** | REST + GraphQL | Personal access token | repos/{owner}/{repo}/contents |
-| **Notion** | REST | Integration token | v1/pages, v1/blocks |
-| **语雀** | REST | OAuth + access_token | api.yuque.com/docs |
-
-### 9.3 AI Agent API选型
-
-| Agent | API协议 | 认证方式 | 关键特性 |
-|-------|---------|----------|---------|
-| **OpenClaw** | REST + WebSocket | API Key | markdown-native, tool-call |
-| **Claude** | REST | API Key | long-context, MCP-native |
-| **ChatGPT** | REST + WebSocket | API Key | realtime-voice, vision |
-| **Gemini** | REST + WebSocket | API Key | 1M context, multimodal |
-| **DeepSeek** | REST | API Key | reasoning, 国内合规 |
-
----
-
-## 十、方案设计总结
-
-### 10.1 核心设计亮点
-
-1. **Markdown as Single Source of Truth**: 数据格式标准化，避免平台锁定
-2. **本地优先架构**: 用户数据主权，性能优先
-3. **可扩展插件架构**: Registry + Adapter模式，无限扩展能力
-4. **Block级AI协同**: Markdown原生支持AI操作，无缝集成
-5. **多终端一致性**: @moraya/core统一核心，跨终端复用
-6. **实时协同CRDT**: Yjs + ProseMirror，无冲突并发编辑
-7. **安全分层设计**: 密钥安全 + 传输安全 + Agent安全
-
-### 10.2 技术创新点
-
-1. **Markdown ↔ 飞书Block双向转换器**: 首个开源实现
-2. **AI Agent角色分工**: co-author/reviewer等角色定义
-3. **Agent操作审计**: Sidecar存储AI操作历史
-4. **多Agent协同机制**: 多Agent并发协作 + 结果合并
-5. **鸿蒙ArkTS原生适配**: 等Tauri官方决策，可选原生实现
-
-### 10.3 架构优势
+### 6.3 方案优势
 
 | 优势 | 描述 |
 |------|------|
-| **数据主权** | 本地优先，用户完全掌控数据 |
-| **平台灵活** | 可接入任意云平台，避免锁定 |
-| **Agent深度** | AI作为角色参与创作，而非被动工具 |
-| **多终端一致** | 四端一致体验，核心逻辑复用 |
-| **性能优先** | 本地操作零延迟，懒加载渲染 |
-| **可扩展** | 插件化架构，社区贡献适配器 |
+| **官方工具** | 飞书官方CLI，稳定可靠 |
+| **架构最简** | 仅需集成CLI调用 |
+| **开发量最小** | 约150h，周期约4周 |
+| **无中间层** | 无需OpenClaw/Agent |
+| **维护成本最低** | 飞书官方维护CLI |
+| **认证已实现** | 飞书CLI已处理OAuth |
+| **转换已实现** | 飞书CLI已处理格式转换 |
 
 ---
 
-## 附录：关键模块依赖关系
+## 七、实现路线图（v4）
 
-```
-@moraya/core (npm package)
-    ├── ProseMirror Editor Engine
-    ├── markdown-it Parser
-    ├── Sync Engine (Diff/CRDT)
-    ├── AI Service Base
-    └── MCP Manager Base
-    
-Sync Adapter Registry
-    ├── Feishu Adapter → Feishu API (Rust proxy)
-    ├── Picora Adapter → Picora API (Rust proxy)
-    ├── GitHub Adapter → GitHub API (Rust proxy)
-    └── ... (其他适配器)
-    
-AI Agent Registry
-    ├── OpenClaw Adapter → OpenClaw API (Rust proxy)
-    ├── Claude Adapter → Claude API (现有ai-service改造)
-    ├── ChatGPT Adapter → OpenAI API (现有ai-service改造)
-    └── ... (其他Agent)
-    
-Agent Collab Engine
-    ├── Context Injection → KB Service + Rules Engine
-    ├── Block Operations → ProseMirror + Sidecar Storage
-    ├── Tool Call → MCP Manager
-    └── Memory Management → IndexedDB/SQLite
-    
-Real-time Collab (Yjs)
-    ├── ProseMirror → y-prosemirror binding
-    ├── WebSocket → y-websocket provider
-    ├── IndexedDB → y-indexeddb provider
-    └── Awareness → User state sharing
-```
+| Phase | 内容 | 工作量 | 周期 |
+|-------|------|--------|------|
+| **Phase 1** | 飞书CLI调研 + Rust CLI调用实现 | 40h | 1周 |
+| **Phase 2** | 文件监听 + 同步引擎 | 50h | 1周 |
+| **Phase 3** | 前端CLI配置 + 同步UI | 30h | 1周 |
+| **Phase 4** | 集成测试 + Beta发布 | 30h | 1周 |
+| **总计** | | **150h** | **4周** |
 
 ---
 
-**文档版本**: v1.0  
+**文档版本**: v4.0（飞书CLI直接集成）  
 **最后更新**: 2026-05-07  
 **审核状态**: 待审核  
-**下一步**: 基于此设计方案制定项目计划文档
+**下一步**: 确认飞书CLI命令格式后启动开发
