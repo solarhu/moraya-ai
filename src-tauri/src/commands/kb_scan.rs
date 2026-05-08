@@ -94,3 +94,168 @@ fn scan_directory_recursive(dir: &Path, files: &mut Vec<String>) -> Result<(), S
     
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_test_kb(temp_dir: &TempDir) -> String {
+        let kb_path = temp_dir.path().to_string_lossy().to_string();
+        
+        fs::write(temp_dir.path().join("test1.md"), "# Test 1").unwrap();
+        fs::write(temp_dir.path().join("test2.md"), "# Test 2").unwrap();
+        fs::write(temp_dir.path().join("data.txt"), "Not markdown").unwrap();
+        
+        let subdir = temp_dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+        fs::write(subdir.join("test3.md"), "# Test 3").unwrap();
+        
+        kb_path
+    }
+
+    #[tokio::test]
+    async fn test_kb_scan_files_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let kb_path = create_test_kb(&temp_dir);
+        
+        let result = kb_scan_files(kb_path).await;
+        
+        assert!(result.is_ok());
+        let files = result.unwrap();
+        
+        assert_eq!(files.len(), 3);
+        assert!(files.iter().any(|f| f.contains("test1.md")));
+        assert!(files.iter().any(|f| f.contains("test2.md")));
+        assert!(files.iter().any(|f| f.contains("test3.md")));
+        assert!(!files.iter().any(|f| f.contains("data.txt")));
+    }
+
+    #[tokio::test]
+    async fn test_kb_scan_files_nonexistent_path() {
+        let result = kb_scan_files("/nonexistent/path").await;
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
+    }
+
+    #[tokio::test]
+    async fn test_kb_scan_files_empty_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let kb_path = temp_dir.path().to_string_lossy().to_string();
+        
+        let result = kb_scan_files(kb_path).await;
+        
+        assert!(result.is_ok());
+        let files = result.unwrap();
+        assert_eq!(files.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_kb_write_file_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("output.md").to_string_lossy().to_string();
+        
+        let result = kb_write_file(file_path.clone(), "# Test Content").await;
+        
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("File written to"));
+        
+        let content = fs::read_to_string(temp_dir.path().join("output.md")).unwrap();
+        assert_eq!(content, "# Test Content");
+    }
+
+    #[tokio::test]
+    async fn test_kb_write_file_creates_parent_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("newdir/output.md").to_string_lossy().to_string();
+        
+        let result = kb_write_file(file_path.clone(), "# Test").await;
+        
+        assert!(result.is_ok());
+        assert!(temp_dir.path().join("newdir").exists());
+        assert!(temp_dir.path().join("newdir/output.md").exists());
+    }
+
+    #[tokio::test]
+    async fn test_kb_get_file_info_markdown_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.md");
+        fs::write(&file_path, "# Test").unwrap();
+        
+        let result = kb_get_file_info(file_path.to_string_lossy().to_string()).await;
+        
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        
+        assert_eq!(info.name, "test.md");
+        assert!(info.is_markdown);
+        assert_eq!(info.size, 6);
+    }
+
+    #[tokio::test]
+    async fn test_kb_get_file_info_non_markdown_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("data.txt");
+        fs::write(&file_path, "Not markdown").unwrap();
+        
+        let result = kb_get_file_info(file_path.to_string_lossy().to_string()).await;
+        
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        
+        assert_eq!(info.name, "data.txt");
+        assert!(!info.is_markdown);
+    }
+
+    #[tokio::test]
+    async fn test_kb_get_file_info_nonexistent_file() {
+        let result = kb_get_file_info("/nonexistent/file.md".to_string()).await;
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
+    }
+
+    #[test]
+    fn test_scan_directory_recursive_marks_only_markdown() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        fs::write(temp_dir.path().join("doc1.md"), "# Doc 1").unwrap();
+        fs::write(temp_dir.path().join("doc2.markdown"), "# Doc 2").unwrap();
+        fs::write(temp_dir.path().join("data.txt"), "Data").unwrap();
+        fs::write(temp_dir.path().join("config.json"), "{}").unwrap();
+        
+        let mut files = Vec::new();
+        scan_directory_recursive(temp_dir.path(), &mut files).unwrap();
+        
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|f| f.ends_with(".md")));
+        assert!(files.iter().any(|f| f.ends_with(".markdown")));
+        assert!(!files.iter().any(|f| f.ends_with(".txt")));
+        assert!(!files.iter().any(|f| f.ends_with(".json")));
+    }
+
+    #[test]
+    fn test_scan_directory_recursive_nested() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        fs::write(temp_dir.path().join("root.md"), "# Root").unwrap();
+        
+        let level1 = temp_dir.path().join("level1");
+        fs::create_dir(&level1).unwrap();
+        fs::write(level1.join("l1.md"), "# Level 1").unwrap();
+        
+        let level2 = level1.join("level2");
+        fs::create_dir(&level2).unwrap();
+        fs::write(level2.join("l2.md"), "# Level 2").unwrap();
+        
+        let mut files = Vec::new();
+        scan_directory_recursive(temp_dir.path(), &mut files).unwrap();
+        
+        assert_eq!(files.len(), 3);
+        assert!(files.iter().any(|f| f.contains("root.md")));
+        assert!(files.iter().any(|f| f.contains("l1.md")));
+        assert!(files.iter().any(|f| f.contains("l2.md")));
+    }
+}
