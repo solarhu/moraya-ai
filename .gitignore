@@ -112,4 +112,6 @@ watermarks.local.json.ots
 /CLAUDE.md
 
 # Sibling repo symlink (moraya-core lives in its own git repo)
-/moraya-core
+/moraya-core# Rust test targets
+tests/*/target/
+**/target/
