@@ -3,6 +3,7 @@ pub mod file;
 pub mod git;
 pub mod image_hosting_picora;
 pub mod kb;
+pub mod kb_scan;
 pub mod lark_cli;
 pub mod picora_account;
 pub mod picora_media;
