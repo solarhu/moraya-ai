@@ -1,13 +1,10 @@
-import type { PlatformAPI } from './types';
+import type { HTTPAPI } from './types';
 
-export class WebHTTP implements PlatformAPI.HTTP {
+export class WebHTTP implements HTTPAPI {
   async fetch(url: string, options?: RequestInit): Promise<Response> {
-    // Web端直接使用fetch
-    // 注意CORS限制
-    
     const defaultOptions: RequestInit = {
-      mode: 'cors', // 跨域请求
-      credentials: 'omit', // 不发送cookies
+      mode: 'cors',
+      credentials: 'omit',
     };
     
     const mergedOptions = { ...defaultOptions, ...options };
@@ -16,7 +13,6 @@ export class WebHTTP implements PlatformAPI.HTTP {
       const response = await fetch(url, mergedOptions);
       return response;
     } catch (error) {
-      // CORS错误处理
       if (error instanceof TypeError && error.message.includes('CORS')) {
         throw new Error(`CORS error: ${url}. Consider using a CORS proxy or server-side proxy.`);
       }
@@ -27,22 +23,18 @@ export class WebHTTP implements PlatformAPI.HTTP {
   
   async fetchWithProxy(
     url: string,
-    options?: RequestInit,
-    proxyUrl?: string
+    proxyUrl: string,
+    options?: RequestInit
   ): Promise<Response> {
-    // 使用CORS代理
-    const proxy = proxyUrl || 'https://cors-anywhere.herokuapp.com/';
-    const proxiedUrl = proxy + url;
-    
+    const proxiedUrl = proxyUrl + url;
     return await this.fetch(proxiedUrl, options);
   }
   
   async stream(
     url: string,
-    options?: RequestInit,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    options?: RequestInit
   ): Promise<void> {
-    // 流式读取（AI对话等）
     const response = await this.fetch(url, options);
     
     if (!response.body) {

@@ -1,6 +1,6 @@
 import { openDB } from 'idb';
 import type { IDBPDatabase } from 'idb';
-import type { PlatformAPI } from './types';
+import type { FileSystemAPI } from './types';
 
 const DB_NAME = 'moraya-web';
 const FILE_STORE = 'files';
@@ -14,7 +14,7 @@ interface FileMeta {
   content?: string;
 }
 
-export class WebFileSystem implements PlatformAPI.FileSystem {
+export class WebFileSystem implements FileSystemAPI {
   private db: IDBPDatabase | null = null;
   private initialized = false;
   

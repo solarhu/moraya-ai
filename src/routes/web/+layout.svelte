@@ -1,6 +1,6 @@
 <script lang="ts">
-  import '../styles/global.css';
-  import '../styles/editor.css';
+  import '$lib/styles/global.css';
+  import '$lib/styles/editor.css';
   import 'katex/dist/katex.min.css';
   
   let { children } = $props();

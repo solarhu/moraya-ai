@@ -1,21 +1,28 @@
 <script lang="ts">
-  import { platform } from '$lib/platform';
+  import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { detectPlatform } from '$lib/platform/platform-detector';
+  
+  let platform: 'tauri' | 'web' | null = null;
   
   onMount(() => {
-    // 自动跳转到对应平台的页面
-    if (platform === 'web') {
+    platform = detectPlatform();
+    
+    // 只在根路由时自动跳转到web端
+    if (platform === 'web' && $page.url.pathname === '/') {
       goto('/web');
-    } else {
-      // Tauri端使用默认路由
     }
   });
 </script>
 
-<div class="platform-redirect">
-  <p>正在检测平台...</p>
-</div>
+{#if platform === null && $page.url.pathname === '/'}
+  <div class="platform-redirect">
+    <p>正在检测平台...</p>
+  </div>
+{:else}
+  <slot />
+{/if}
 
 <style>
   .platform-redirect {
@@ -23,6 +30,6 @@
     align-items: center;
     justify-content: center;
     height: 100vh;
-    font-size: var(--font-size-lg);
+    font-size: 1.2rem;
   }
 </style>

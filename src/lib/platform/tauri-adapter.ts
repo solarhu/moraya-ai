@@ -41,6 +41,7 @@ class TauriFileSystem implements FileSystemAPI {
   }
   
   async pickFile(): Promise<any | null> {
+    const { open } = await import('@tauri-apps/plugin-dialog');
     const result = await open({
       multiple: false,
       filters: [
@@ -59,7 +60,6 @@ class TauriFileSystem implements FileSystemAPI {
   }
   
   async downloadFile(path: string, content?: string): Promise<void> {
-    // Tauri端不需要download，文件已在本地
     if (!content) {
       content = await this.readFile(path);
     }
@@ -141,10 +141,15 @@ class TauriDialog implements DialogAPI {
     messageText: string,
     options?: { title?: string; type?: 'info' | 'warning' | 'error' }
   ): Promise<boolean> {
-    return await ask(messageText, {
-      title: options?.title,
-      kind: options?.type || 'warning',
-    });
+    try {
+      const { ask } = await import('@tauri-apps/plugin-dialog');
+      return await ask(messageText, {
+        title: options?.title,
+        kind: options?.type || 'warning',
+      });
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -156,8 +161,8 @@ class TauriStorage implements StorageAPI {
     if (this.initialized) return;
     
     try {
-      const Store = (await import('@tauri-apps/plugin-store')).Store;
-      this.store = new Store('moraya-settings.json');
+      const { load } = await import('@tauri-apps/plugin-store');
+      this.store = await load('moraya-settings.json');
       this.initialized = true;
     } catch {
       // Fallback to localStorage if Store not available
@@ -226,7 +231,7 @@ class TauriStorage implements StorageAPI {
     
     if (this.store) {
       const entries = await this.store.entries();
-      return entries.map(([key]) => key);
+      return entries.map(([key]: [string, any]) => key);
     } else {
       const keys: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -253,8 +258,8 @@ class TauriHTTP implements HTTPAPI {
   
   async stream(
     url: string,
-    options?: RequestInit,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    options?: RequestInit
   ): Promise<void> {
     const response = await this.fetch(url, options);
     

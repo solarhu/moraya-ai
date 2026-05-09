@@ -1,6 +1,6 @@
-import type { PlatformAPI } from './types';
+import type { StorageAPI } from './types';
 
-export class WebStorage implements PlatformAPI.Storage {
+export class WebStorage implements StorageAPI {
   private prefix = 'moraya:';
   
   async get<T = any>(key: string): Promise<T | null> {

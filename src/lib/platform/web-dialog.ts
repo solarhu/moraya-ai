@@ -1,6 +1,6 @@
-import type { PlatformAPI } from './types';
+import type { DialogAPI } from './types';
 
-export class WebDialog implements PlatformAPI.Dialog {
+export class WebDialog implements DialogAPI {
   async openFile(options?: {
     multiple?: boolean;
     filters?: Array<{ name: string; extensions: string[] }>;

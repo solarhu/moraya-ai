@@ -41,8 +41,8 @@ export interface StorageAPI {
 
 export interface HTTPAPI {
   fetch(url: string, options?: RequestInit): Promise<Response>;
-  fetchWithProxy?(url: string, options?: RequestInit, proxyUrl?: string): Promise<Response>;
-  stream?(url: string, options?: RequestInit, onChunk: (chunk: string) => void): Promise<void>;
+  fetchWithProxy?(url: string, proxyUrl: string, options?: RequestInit): Promise<Response>;
+  stream?(url: string, onChunk: (chunk: string) => void, options?: RequestInit): Promise<void>;
 }
 
 export interface PlatformAdapter {
@@ -52,3 +52,5 @@ export interface PlatformAdapter {
   storage: StorageAPI;
   http: HTTPAPI;
 }
+
+export type PlatformAPI = PlatformAdapter;
