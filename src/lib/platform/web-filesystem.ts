@@ -1,4 +1,5 @@
-import { openDB, IDBPDatabase } from 'idb';
+import { openDB } from 'idb';
+import type { IDBPDatabase } from 'idb';
 import type { PlatformAPI } from './types';
 
 const DB_NAME = 'moraya-web';
