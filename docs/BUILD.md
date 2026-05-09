@@ -4,6 +4,7 @@
 
 ## 目录
 
+- [快速开始（推荐）](#快速开始推荐)
 - [系统要求](#系统要求)
 - [获取源码](#获取源码)
 - [安装依赖](#安装依赖)
@@ -11,6 +12,136 @@
 - [生产构建](#生产构建)
 - [测试](#测试)
 - [常见问题](#常见问题)
+
+## 快速开始（推荐）
+
+Moraya提供统一构建脚本，自动解决依赖、隔离构建目录、避免影响源码。
+
+### 一键构建
+
+```bash
+# Linux/macOS
+make build
+
+# 或直接使用脚本
+./scripts/build.sh
+
+# Windows
+.\scripts\build.ps1
+```
+
+### 使用指定构建目录
+
+```bash
+# 指定构建目录（避免影响源码目录）
+./scripts/build.sh --build-dir ~/build/moraya --keep
+
+# 或使用Makefile
+make build-dir DIR=~/build/moraya
+```
+
+### 构建选项
+
+```bash
+# 查看所有选项
+./scripts/build.sh --help
+
+# 常用选项
+./scripts/build.sh --clean              # 清理后构建
+./scripts/build.sh --keep               # 保留构建目录
+./scripts/build.sh --skip-deps          # 跳过依赖安装
+./scripts/build.sh --target linux       # 指定目标平台
+./scripts/build.sh --package deb        # 指定打包类型
+./scripts/build.sh --dev                # 开发构建
+./scripts/build.sh --verbose            # 显示详细输出
+```
+
+### Makefile简化命令
+
+```bash
+# 查看所有命令
+make help
+
+# 常用命令
+make deps          # 安装依赖
+make dev           # 开发构建
+make build         # 生产构建
+make test          # 运行测试
+make clean         # 清理构建产物
+make install       # 安装到系统
+make uninstall     # 从系统卸载
+```
+
+## 构建脚本特性
+
+### 自动依赖解决
+
+构建脚本会自动检测和安装缺失的依赖：
+
+- **Node.js** >= 18.0
+- **pnpm** >= 8.0
+- **Rust** >= 1.70
+- **系统库**（GTK/WebKit/glib等）
+
+```bash
+# 自动安装所有依赖
+./scripts/build.sh --skip-deps false
+
+# 或手动检查依赖
+make deps-check
+```
+
+### 构建目录隔离
+
+默认使用临时构建目录（`/tmp/moraya-build`），不影响源码目录：
+
+```bash
+# 默认构建目录（自动清理）
+/tmp/moraya-build
+
+# 指定构建目录（可选择保留）
+~/build/moraya
+```
+
+**优点**：
+- 源码目录保持干净（无node_modules、build产物）
+- 构建产物可单独打包分发
+- 支持并行多版本构建
+
+### 打包运行依赖
+
+构建完成后自动打包运行依赖（`node_modules`等）：
+
+```bash
+# 产物位置
+moraya-dependencies.tar.gz  # Linux/macOS
+moraya-dependencies.zip     # Windows
+
+# 或手动打包
+make package-deps
+```
+
+### 支持多平台打包
+
+```bash
+# Linux
+./scripts/build.sh --target linux --package all     # 所有包（deb/appimage/rpm）
+./scripts/build.sh --target linux --package deb     # 仅DEB
+./scripts/build.sh --target linux --package appimage # 仅AppImage
+
+# macOS
+./scripts/build.sh --target macos --package all     # 所有包（dmg/app）
+./scripts/build.sh --target macos --package dmg     # 仅DMG
+
+# Windows
+.\scripts\build.ps1 -Package all                    # 所有包（msi/nsis）
+.\scripts\build.ps1 -Package msi                    # 仅MSI
+.\scripts\build.ps1 -Package nsis                   # 仅NSIS
+```
+
+## 手动构建流程（可选）
+
+如需手动控制构建过程，可参考以下步骤：
 
 ## 系统要求
 
@@ -560,3 +691,135 @@ jobs:
 - [Vite 文档](https://vitejs.dev/guide/)
 - [Rust 安装指南](https://www.rust-lang.org/tools/install)
 - [pnpm 文档](https://pnpm.io/installation)
+
+## 构建脚本参数详解
+
+### scripts/build.sh (Linux/macOS)
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `-d, --build-dir DIR` | 指定构建目录 | `--build-dir ~/build` |
+| `-c, --clean` | 清理构建目录 | `--clean` |
+| `-k, --keep` | 保留构建目录 | `--keep` |
+| `-s, --skip-deps` | 跳过依赖安装 | `--skip-deps` |
+| `-t, --target PLATFORM` | 指定构建目标 | `--target linux` |
+| `-r, --release` | 生产构建 | `--release` |
+| `-D, --dev` | 开发构建 | `--dev` |
+| `-p, --package TYPE` | 指定打包类型 | `--package deb` |
+| `-v, --verbose` | 详细输出 | `--verbose` |
+| `-h, --help` | 显示帮助 | `--help` |
+| `--version` | 显示版本 | `--version` |
+
+### scripts/build.ps1 (Windows)
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `-BuildDir DIR` | 指定构建目录 | `-BuildDir D:\Build` |
+| `-Clean` | 清理构建目录 | `-Clean` |
+| `-Keep` | 保留构建目录 | `-Keep` |
+| `-SkipDeps` | 跳过依赖安装 | `-SkipDeps` |
+| `-Target PLATFORM` | 指定构建目标 | `-Target windows` |
+| `-Mode MODE` | 构建模式 | `-Mode dev` |
+| `-Package TYPE` | 指定打包类型 | `-Package msi` |
+| `-Verbose` | 详细输出 | `-Verbose` |
+| `-Help` | 显示帮助 | `-Help` |
+
+### Makefile命令
+
+| 命令 | 说明 | 等价脚本调用 |
+|------|------|-------------|
+| `make help` | 显示帮助 | - |
+| `make deps` | 安装依赖 | `build.sh --skip-deps false` |
+| `make dev` | 开发构建 | `pnpm tauri dev` |
+| `make build` | 生产构建 | `build.sh --release` |
+| `make build-dir DIR=...` | 指定目录构建 | `build.sh --build-dir DIR --keep` |
+| `make test` | 运行测试 | `pnpm test && cargo test` |
+| `make clean` | 清理产物 | `rm -rf build/ ...` |
+| `make install` | 安装到系统 | `dpkg -i *.deb` |
+| `make uninstall` | 卸载 | `dpkg --remove moraya` |
+
+### 构建流程详解
+
+构建脚本执行流程：
+
+```mermaid
+graph TD
+    A[开始] --> B{检查依赖}
+    B -->|缺失| C[自动安装依赖]
+    B -->|完整| D[准备构建目录]
+    C --> D
+    D --> E[复制源码]
+    E --> F[安装项目依赖]
+    F --> G{构建模式}
+    G -->|开发| H[前端构建]
+    G -->|生产| I[完整构建+打包]
+    H --> J[完成]
+    I --> K[打包运行依赖]
+    K --> L{保留构建目录?}
+    L -->|否| M[清理构建目录]
+    L -->|是| N[保留构建目录]
+    M --> J
+    N --> J
+```
+
+### 构建产物位置
+
+| 构建模式 | 产物位置 | 内容 |
+|---------|---------|------|
+| **开发构建** | `build-dir/build/` | 前端静态文件 |
+| **生产构建** | `build-dir/src-tauri/target/release/bundle/` | 安装包（deb/dmg/msi等） |
+| **依赖打包** | `build-dir/moraya-dependencies.tar.gz` | node_modules等运行依赖 |
+
+### 最佳实践
+
+#### 1. 避免污染源码目录
+
+```bash
+# 推荐：使用独立构建目录
+./scripts/build.sh --build-dir ~/build/moraya --keep
+
+# 不推荐：直接在源码目录构建
+# 会产生node_modules、build等大量文件
+pnpm install
+pnpm tauri build
+```
+
+#### 2. 定期清理构建目录
+
+```bash
+# 构建前清理
+./scripts/build.sh --clean --build-dir ~/build/moraya
+
+# 或手动清理
+make clean-build-dir DIR=~/build/moraya
+```
+
+#### 3. CI/CD中使用构建脚本
+
+```yaml
+# GitHub Actions示例
+- name: Build
+  run: |
+    chmod +x scripts/build.sh
+    ./scripts/build.sh --skip-deps --release --clean
+```
+
+#### 4. 多版本并行构建
+
+```bash
+# 同时构建多个版本（不同构建目录）
+./scripts/build.sh --build-dir ~/build/moraya-stable
+./scripts/build.sh --build-dir ~/build/moraya-dev --dev
+```
+
+#### 5. 分发构建产物
+
+```bash
+# 打包构建产物和依赖
+tar -czf moraya-v0.40.0-linux.tar.gz \
+    build-dir/src-tauri/target/release/bundle \
+    build-dir/moraya-dependencies.tar.gz
+
+# 上传到发布页面
+# GitHub Releases / Gitee Releases
+```
