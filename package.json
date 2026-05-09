@@ -31,6 +31,7 @@
     "@types/markdown-it": "^14.1.2",
     "highlight.js": "^11.11.1",
     "html2canvas": "^1.4.1",
+    "idb": "^8.0.3",
     "jspdf": "^4.1.0",
     "katex": "^0.16.28",
     "markdown-it": "^14.1.1",
