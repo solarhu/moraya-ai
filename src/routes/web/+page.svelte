@@ -1,14 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { webFileSystem } from '$lib/platform/web-filesystem';
+  import WebWysiwygEditor from '$lib/components/WebWysiwygEditor.svelte';
   
   let mounted = $state(false);
   let files = $state<Array<{ path: string; name: string; size: number; lastModified: number }>>([]);
   let currentFile = $state<string | null>(null);
-  let fileContent = $state('');
   let isNewFile = $state(false);
   let newFileName = $state('');
   let showNewFileDialog = $state(false);
+  let editorRef: WebWysiwygEditor;
   
   onMount(async () => {
     mounted = true;
@@ -34,7 +35,9 @@
     try {
       const content = await webFileSystem.readFile(path);
       currentFile = path;
-      fileContent = content;
+      if (editorRef) {
+        editorRef.setContent(content);
+      }
       isNewFile = false;
     } catch (e) {
       console.error('打开文件失败:', e);
@@ -42,10 +45,11 @@
   }
   
   async function saveCurrentFile() {
-    if (!currentFile) return;
+    if (!currentFile || !editorRef) return;
     
     try {
-      await webFileSystem.writeFile(currentFile, fileContent);
+      const content = editorRef.getContent();
+      await webFileSystem.writeFile(currentFile, content);
       await loadFiles();
     } catch (e) {
       console.error('保存失败:', e);
@@ -56,13 +60,17 @@
     if (!newFileName.trim()) return;
     
     const path = newFileName.endsWith('.md') ? newFileName : `${newFileName}.md`;
+    const initialContent = '# ' + newFileName + '\n\n在这里开始编辑...\n';
+    
     currentFile = path;
-    fileContent = '# ' + newFileName + '\n\n';
     isNewFile = true;
     showNewFileDialog = false;
     newFileName = '';
     
-    await webFileSystem.writeFile(path, fileContent);
+    await webFileSystem.writeFile(path, initialContent);
+    if (editorRef) {
+      editorRef.setContent(initialContent);
+    }
     await loadFiles();
   }
   
@@ -73,7 +81,9 @@
       await webFileSystem.deleteFile(path);
       if (currentFile === path) {
         currentFile = null;
-        fileContent = '';
+        if (editorRef) {
+          editorRef.setContent('');
+        }
       }
       await loadFiles();
     } catch (e) {
@@ -86,7 +96,9 @@
       const file = await webFileSystem.pickFile();
       if (file) {
         currentFile = file.path;
-        fileContent = file.content || '';
+        if (editorRef) {
+          editorRef.setContent(file.content || '');
+        }
         await loadFiles();
       }
     } catch (e) {
@@ -95,12 +107,9 @@
   }
   
   async function downloadCurrentFile() {
-    if (!currentFile) return;
-    await webFileSystem.downloadFile(currentFile, fileContent);
-  }
-  
-  function formatDate(timestamp: number): string {
-    return new Date(timestamp).toLocaleString('zh-CN');
+    if (!currentFile || !editorRef) return;
+    const content = editorRef.getContent();
+    await webFileSystem.downloadFile(currentFile, content);
   }
   
   function formatSize(size: number): string {
@@ -111,14 +120,14 @@
 </script>
 
 <svelte:head>
-  <title>Moraya Web - Markdown编辑器</title>
+  <title>Moraya Web - 所见即所得Markdown编辑器</title>
 </svelte:head>
 
 <div class="web-editor">
   <header class="header">
     <div class="header-left">
       <h1>Moraya Web</h1>
-      <p>浏览器版Markdown编辑器</p>
+      <p>所见即所得Markdown编辑器</p>
     </div>
     <a href="/web/settings" class="settings-link">设置</a>
   </header>
@@ -157,20 +166,16 @@
           <div class="editor-header">
             <span class="current-file">{currentFile}</span>
             <div class="editor-actions">
-              <button class="btn" onclick={saveCurrentFile}>保存</button>
+              <button class="btn" onclick={saveCurrentFile}>保存 (Ctrl+S)</button>
               <button class="btn" onclick={downloadCurrentFile}>下载</button>
             </div>
           </div>
           
-          <textarea
-            bind:value={fileContent}
-            class="editor-textarea"
-            placeholder="在这里编辑Markdown内容..."
-          ></textarea>
+          <WebWysiwygEditor bind:this={editorRef} />
         {:else}
           <div class="welcome">
             <h2>欢迎使用 Moraya Web</h2>
-            <p>从左侧选择文件，或创建新文件开始编辑</p>
+            <p>所见即所得的Markdown编辑器，实时渲染你的内容</p>
             <div class="quick-actions">
               <button class="btn" onclick={() => showNewFileDialog = true}>新建文件</button>
               <button class="btn" onclick={uploadFile}>上传文件</button>
@@ -369,16 +374,6 @@
   .editor-actions {
     display: flex;
     gap: 0.5rem;
-  }
-  
-  .editor-textarea {
-    flex: 1;
-    padding: 1rem;
-    border: none;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 0.9rem;
-    resize: none;
-    outline: none;
   }
   
   .welcome {
