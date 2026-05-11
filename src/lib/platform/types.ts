@@ -1,4 +1,5 @@
 export interface FileSystemAPI {
+  init?(): Promise<void>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
   deleteFile(path: string): Promise<void>;
