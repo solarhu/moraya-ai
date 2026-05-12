@@ -228,6 +228,51 @@ describe('CloudProviderRegistry', () => {
     expect(cloudProviderRegistry.has('mock')).toBe(true);
     expect(cloudProviderRegistry.has('not-exist')).toBe(false);
   });
+  
+  test('应该能够添加和移除事件监听器', () => {
+    const listener = vi.fn();
+    
+    cloudProviderRegistry.addEventListener(listener);
+    
+    // 触发事件（通过注册触发）
+    const adapter = new MockCloudAdapter();
+    cloudProviderRegistry.register(adapter);
+    
+    expect(listener).toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'auth-changed' })
+    );
+    
+    // 移除监听器
+    cloudProviderRegistry.removeEventListener(listener);
+    
+    // 再次触发，监听器不应被调用
+    listener.mockClear();
+    cloudProviderRegistry.unregister('mock');
+    
+    expect(listener).not.toHaveBeenCalled();
+  });
+  
+  test('事件监听器错误不应该影响其他监听器', () => {
+    const errorListener = vi.fn(() => {
+      throw new Error('Listener error');
+    });
+    const normalListener = vi.fn();
+    
+    cloudProviderRegistry.addEventListener(errorListener);
+    cloudProviderRegistry.addEventListener(normalListener);
+    
+    // 触发事件
+    const adapter = new MockCloudAdapter();
+    cloudProviderRegistry.register(adapter);
+    
+    // 错误监听器抛出异常，但正常监听器仍应被调用
+    expect(normalListener).toHaveBeenCalled();
+    
+    // 清理
+    cloudProviderRegistry.removeEventListener(errorListener);
+    cloudProviderRegistry.removeEventListener(normalListener);
+  });
 });
 
 describe('CloudProviderAPI Interface', () => {
