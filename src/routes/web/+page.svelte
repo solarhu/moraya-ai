@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { webFileSystem } from '$lib/platform/web-filesystem';
   import WebWysiwygEditor from '$lib/components/WebWysiwygEditor.svelte';
+  import LarkSyncDialog from '$lib/components/LarkSyncDialog.svelte';
   
   let mounted = $state(false);
   let files = $state<Array<{ path: string; name: string; size: number; lastModified: number }>>([]);
@@ -10,6 +11,7 @@
   let newFileName = $state('');
   let showNewFileDialog = $state(false);
   let editorRef: WebWysiwygEditor;
+  let larkDialogRef: LarkSyncDialog;
   
   onMount(async () => {
     mounted = true;
@@ -163,13 +165,20 @@
       
       <main class="editor-area">
         {#if currentFile}
-          <div class="editor-header">
-            <span class="current-file">{currentFile}</span>
-            <div class="editor-actions">
-              <button class="btn" onclick={saveCurrentFile}>保存 (Ctrl+S)</button>
-              <button class="btn" onclick={downloadCurrentFile}>下载</button>
+<div class="editor-header">
+              <span class="current-file">{currentFile}</span>
+              <div class="editor-actions">
+                <button class="btn btn-lark" onclick={() => {
+                  const fileName = currentFile?.split('/').pop() || '未命名文档';
+                  const content = editorRef?.getContent() || '';
+                  if (larkDialogRef) {
+                    larkDialogRef.show(fileName, content);
+                  }
+                }}>飞书</button>
+                <button class="btn" onclick={saveCurrentFile}>保存 (Ctrl+S)</button>
+                <button class="btn" onclick={downloadCurrentFile}>下载</button>
+              </div>
             </div>
-          </div>
           
           <WebWysiwygEditor bind:this={editorRef} />
         {:else}
@@ -203,6 +212,8 @@
       </div>
     </div>
   {/if}
+  
+  <LarkSyncDialog bind:this={larkDialogRef} />
 </div>
 
 <style>
@@ -412,6 +423,14 @@
   
   .btn:hover {
     background: #2980b9;
+  }
+  
+  .btn-lark {
+    background: #ff6b35;
+  }
+  
+  .btn-lark:hover {
+    background: #e55a2b;
   }
   
   .btn-primary {

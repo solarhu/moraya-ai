@@ -2,13 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
-import authRoutes from './api/auth-routes';
-import cloudRoutes from './api/cloud-routes';
+import { createAuthRoutes } from './api/auth-routes';
+import { createCloudRoutes } from './api/cloud-routes';
+import { userAuthService } from './auth/user-auth';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const JWT_SECRET = process.env.JWT_SECRET || 'moraya-secret-key-change-in-production';
 
 // 中间件
 app.use(cors({
@@ -18,8 +20,8 @@ app.use(cors({
 app.use(express.json());
 
 // 路由
-app.use('/api/auth', authRoutes);
-app.use('/api/cloud', cloudRoutes);
+app.use('/api/auth', createAuthRoutes(userAuthService, JWT_SECRET));
+app.use('/api/cloud', createCloudRoutes());
 
 // 健康检查
 app.get('/health', (req, res) => {
@@ -39,7 +41,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Moraya Backend running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
 });
